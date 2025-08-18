@@ -2,7 +2,7 @@ services:
   api:
     container_name: detection-service
     build:
-     context: app
+     context: .
      target: builder
     ports: 
       - '8000:8000'
