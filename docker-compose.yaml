@@ -6,3 +6,7 @@ services:
      target: builder
     ports: 
       - '8000:8000'
+
+networks:
+  tcc-cola-network:
+    external: true

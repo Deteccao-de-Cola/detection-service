@@ -30,6 +30,10 @@ cd detection-service
 Depois de clonar o projeto, execute:
 
 ```bash
+docker network create tcc-cola-network
+```
+
+```bash
 docker compose up -d
 ```
 
