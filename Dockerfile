@@ -12,7 +12,7 @@ COPY . .
 ENTRYPOINT ["python3"]
 CMD ["app/app.py"]
 
-FROM builder as dev-envs
+FROM builder AS dev-envs
 
 RUN <<EOF
 apk update
