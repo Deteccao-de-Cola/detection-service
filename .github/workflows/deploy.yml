@@ -58,7 +58,7 @@ jobs:
                 password: ${{ secrets.DOCKERHUB_TOKEN }}
 
             - name: Build Docker image
-              run: docker build . -t dougfarias/detection-service:$$(git describe --tags --abbrev=0 || echo latest)
+              run: docker build . -t dougfarias/detection-service:$(git describe --tags --abbrev=0 || echo latest)
 
             - name: Push Docker image
-              run: docker push dougfarias/detection-service:$$(git describe --tags --abbrev=0 || echo latest)
+              run: docker push dougfarias/detection-service:$(git describe --tags --abbrev=0 || echo latest)
