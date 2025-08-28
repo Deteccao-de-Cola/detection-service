@@ -9,8 +9,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 COPY . .
 
-ENTRYPOINT ["python3"]
-CMD ["app/app.py"]
+
+ENTRYPOINT ["waitress-serve"]
+CMD ["--host=0.0.0.0", "--port=8000", "app.app:app"]
 
 FROM builder AS dev-envs
 
