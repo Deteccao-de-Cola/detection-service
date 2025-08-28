@@ -62,3 +62,11 @@ jobs:
 
             - name: Push Docker image
               run: docker push dougfarias/detection-service:$(git describe --tags --abbrev=0 || echo latest)
+
+            - name: Trigger Deploy
+              run: |
+                IMAGE_TAG=$(git describe --tags --abbrev=0 || echo latest)
+                ENCODED_IMAGE=$(python3 -c "import urllib.parse; print(urllib.parse.quote('docker.io/dougfarias/detection-service:' + '$IMAGE_TAG'))")
+                curl -X POST "${{ secrets.RENDER_URL_TRIGGER }}&imgURL=$ENCODED_IMAGE"
+
+
