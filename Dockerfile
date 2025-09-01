@@ -1,6 +1,6 @@
 FROM --platform=$BUILDPLATFORM python:3.10-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src
 
 COPY requirements.txt .
 
@@ -9,9 +9,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 COPY . .
 
-
 ENTRYPOINT ["waitress-serve"]
-CMD ["--host=0.0.0.0", "--port=8000", "app.app:app"]
+CMD ["--host=0.0.0.0", "--port=8000", "src.app:app"]
 
 FROM builder AS dev-envs
 
