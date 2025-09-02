@@ -1,5 +1,5 @@
 import pytest
-from app.app import app
+from app import app
 
 @pytest.fixture(name="client")
 def app_client():
@@ -7,7 +7,10 @@ def app_client():
     with app.test_client() as client:
         yield client
 
-def test_hello(client):
-    response = client.get('/')
+def test_root_redirects_to_api(client):
+    response = client.get("/", follow_redirects=True)
     assert response.status_code == 200
-    assert response.data == b"Detection Service on Production! Triggered."
+
+    data = response.get_json()
+    assert data["status"] == "success"
+    assert data["message"] == "Detection Service on Production!"
