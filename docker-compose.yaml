@@ -6,6 +6,10 @@ services:
      target: builder
     ports: 
       - '8000:8000'
+    volumes:
+    - ./:/src
+    networks:
+      - tcc-cola-network
 
 networks:
   tcc-cola-network:
