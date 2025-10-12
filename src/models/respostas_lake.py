@@ -30,3 +30,18 @@ class RespostasLake(db.Model):
             'plataforma': self.plataforma,
             'user_id': self.user_id
         }
+
+    @staticmethod
+    def select_users():
+        users = RespostasLake.query.with_entities(RespostasLake.user_id).distinct().order_by(RespostasLake.user_id).all()
+        return [u[0] for u in users]
+    
+
+    @staticmethod
+    def select_user_questions(user_id):
+        questions = (
+            RespostasLake.query
+            .filter(RespostasLake.user_id == user_id)
+            .all()
+        )
+        return list(map(lambda q: q.to_dict(), questions))

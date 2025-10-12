@@ -8,7 +8,8 @@ jaccard = Blueprint("jaccard", __name__)
     Queries importantes:
     -- Conta o número de usuários distintos na base: SELECT COUNT(DISTINCT(user_id)) FROM tccunb.respostas;
     -- Para cada um dos usuários seleciona o worker e faz a comparação de acordo com as questões que o usuário de index tiver
-    -- For each (usuário) 
+    -- For each (usuário)
+        - Filtra para possuir apenas as informações importantes 
         - Compare as questões respondidas com os outros usuários do sitema
         - Para cada usuário coletar as questões e comparar com uma função de comparação
         - Se existir alguma pergunta para um usuário, então devo armazenar a pessoa em uma matriz 
@@ -42,11 +43,21 @@ jaccard = Blueprint("jaccard", __name__)
 
 @jaccard.route('/compare', methods=['GET'])
 def compare_with_jaccard():
-    
+    batch = 200; 
     users = RespostasLake.select_users()
-    print(users)
-    return jsonify(users);
-    #return jsonify([r.to_dict() for r in users])
+
+
+    for user in users:
+        current_user_response = RespostasLake.select_user_questions(user) 
+        for other_users in users:
+            if(other_users == user):
+                continue
+            
+            respostas = RespostasLake.select_user_questions(other_users)
+            print("Respostas:")
+            print([other_users,respostas])
+        
+    return jsonify(users)
 
 @jaccard.route('/', methods=['GET'])
 def get_all_respostas():
