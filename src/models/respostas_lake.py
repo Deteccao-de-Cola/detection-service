@@ -36,12 +36,13 @@ class RespostasLake(db.Model):
         users = RespostasLake.query.with_entities(RespostasLake.user_id).distinct().order_by(RespostasLake.user_id).all()
         return [u[0] for u in users]
     
-
+    # Terei que modificar as queries para que peguem apenas o útimo id das questoes distintas do usuário que respondeu
     @staticmethod
     def select_user_questions(user_id):
         questions = (
             RespostasLake.query
             .filter(RespostasLake.user_id == user_id)
+            .order_by(RespostasLake.item_id)
             .all()
         )
         return list(map(lambda q: q.to_dict(), questions))

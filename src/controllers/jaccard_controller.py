@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, Blueprint
 from src.models.respostas_lake import db, RespostasLake
+from src.services.jaccard_service import *
 
 jaccard = Blueprint("jaccard", __name__)
 
@@ -53,17 +54,19 @@ def compare_with_jaccard():
             if(other_users == user):
                 continue
             
-            respostas = RespostasLake.select_user_questions(other_users)
-            print("Respostas:")
-            print([other_users,respostas])
-        
+            respostas_other_user = RespostasLake.select_user_questions(other_users)
+
+            respostas = JaccardService.compare(current_user_response, respostas_other_user)
+
+            #print("Respostas:")
+            #print([other_users,respostas])
+
+            
     return jsonify(users)
 
 @jaccard.route('/', methods=['GET'])
 def get_all_respostas():
-    
     respostas = RespostasLake.query.all()
-
     
     return jsonify([r.to_dict() for r in respostas])
 
