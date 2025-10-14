@@ -1,6 +1,8 @@
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from sqlalchemy import func
+from sqlalchemy.orm import aliased
 
 db = SQLAlchemy()
 
@@ -36,13 +38,21 @@ class RespostasLake(db.Model):
         users = RespostasLake.query.with_entities(RespostasLake.user_id).distinct().order_by(RespostasLake.user_id).all()
         return [u[0] for u in users]
     
-    # Terei que modificar as queries para que peguem apenas o útimo id das questoes distintas do usuário que respondeu
     @staticmethod
     def select_user_questions(user_id):
-        questions = (
-            RespostasLake.query
-            .filter(RespostasLake.user_id == user_id)
-            .order_by(RespostasLake.item_id)
-            .all()
+        sql = """SELECT id, item_id, respondida_em, user_id, resposta_usuario
+        FROM respostas_lake rl1
+        WHERE user_id = :idUser
+        AND respondida_em = (
+            SELECT MAX(respondida_em)
+            FROM respostas_lake rl2
+            WHERE rl2.item_id = rl1.item_id
+                AND rl2.user_id = :idUser
         )
-        return list(map(lambda q: q.to_dict(), questions))
+        ORDER BY item_id ASC;"""
+
+
+        result = db.session.execute(db.text(sql), {"idUser": user_id})
+        rows = result.fetchall()
+
+        return [dict(row._mapping) for row in rows]
