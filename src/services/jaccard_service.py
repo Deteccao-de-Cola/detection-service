@@ -10,30 +10,23 @@ class JaccardService:
     '''
     @staticmethod
     def compare(contest, contest_to_be_compared):
-        list2_dict = {item['item_id']: (item['item_id'], item['resposta_usuario'])  for item in contest_to_be_compared}
+        user1_dict = {item['item_id']: item['resposta_usuario'] for item in contest}
+        user2_dict = {item['item_id']: item['resposta_usuario'] for item in contest_to_be_compared}
+        
+        all_items = set(user1_dict.keys()) | set(user2_dict.keys())
+        
         user1_responses = set()
         user2_responses = set()
-
-        for item in contest:
-            item_id = item['item_id']
+        
+        for item_id in all_items:
+            resp1 = user1_dict.get(item_id, None)
+            user1_responses.add((item_id, resp1))
             
-            if item_id in list2_dict:
-                user1_responses.add((item_id, item['resposta_usuario']))
-                user2_responses.add((item_id, list2_dict[item_id][1]))
-            else:
-                #Kinda fake the array
-                user1_responses.add((item_id, item['resposta_usuario']))
-                user2_responses.add((item_id, "-1"))
-                
-
-
-            if not (item_id in contest):
-                #Fake the array
-                user1_responses.add((item_id, item['resposta_usuario']))
-                user2_responses.add((item_id, "-1"))
-
-
+            resp2 = user2_dict.get(item_id, None)
+            user2_responses.add((item_id, resp2))
+        
         return JaccardService.jaccardIndex(user1_responses, user2_responses)
+
 
     
     '''
