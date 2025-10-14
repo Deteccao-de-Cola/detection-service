@@ -2,10 +2,18 @@ services:
   api:
     container_name: detection-service
     build:
-     context: .
-     target: builder
+      context: .
+      target: builder
     ports: 
       - '8000:8000'
+    volumes:
+      - ./:/src
+    networks:
+      - tcc-cola-network
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+    command: python -m flask run --host=0.0.0.0 --port=8000 --reload
 
 networks:
   tcc-cola-network:
