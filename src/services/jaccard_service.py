@@ -27,20 +27,14 @@ class JaccardService:
 
         return JaccardService.jaccard_index(user1_responses, user2_responses)
 
-
-
     '''
         Function to define jaccard index
-    '''
-    '''
+
     def jaccard_similarity(set1, set2):
         intersection = len(set1.intersection(set2))
         union = len(set1.union(set2))
         return intersection / union if union > 0 else 0
 
-    '''
-
-    '''
       J(A, B) = |A ^ B| / |A u B|
     - |A ^ B| é o número de elementos em comum (Interseção).
     - |A u B| é o número total de elementos únicos (União).
@@ -50,7 +44,7 @@ class JaccardService:
         intersection = len(set1.intersection(set2))
         union = len(set1.union(set2))
 
-        if not (union > 0):
+        if not union > 0:
             return 0
 
         return intersection / union

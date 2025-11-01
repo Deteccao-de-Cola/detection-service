@@ -1,9 +1,8 @@
 from flask import Flask, jsonify, request, Blueprint
 from src.models.respostas_lake import db, RespostasLake
-from src.services.jaccard_service import *
+from src.services.jaccard_service import JaccardService
 
 jaccard = Blueprint("jaccard", __name__)
-
 
 '''
     Queries importantes:
@@ -21,9 +20,7 @@ jaccard = Blueprint("jaccard", __name__)
         - A partir da análize da cada usuário será gerado uma matriz com o
             índice de similiaridade dos usuários.
         - Essa matriz deverá ser exibida para os usuários (HEATMAP)
-'''
 
-'''
     2 Tipos de abordagens
     1 - Analize realizada com foco nos usuários
     2 - Analize realizada com foco nas questões e a parti dela pegar os usuários
@@ -34,9 +31,7 @@ jaccard = Blueprint("jaccard", __name__)
         respostas dos usuários, não das questões mais respondidas
     No caso seria interessante analizar os dois caminhos na verdade, mas
         prioritáriamente analizar por usuário.
-'''
 
-'''
     Preciso de processar os json's
     1 - Pega do banco de dados os dados de todos os usuários
     2 - Para cada usuário gerar uma lista encadeada de quetões realizadas
@@ -44,17 +39,14 @@ jaccard = Blueprint("jaccard", __name__)
         possuem as mesma questão respondida
     4 - Fazer análize dessas questões, utilizando de workers para dividir cada
         um dos usuários e fazer a comparação entre eles
-'''
-'''
+
     Outra abordagem que pode ser utiliada é:
     1 - Coletar as 100 questões mais respondidas
     2 - Utilizar essas questões como base para fazer a análize
     3 -
 '''
-
 @jaccard.route('/compare', methods=['GET'])
 def compare_with_jaccard():
-    batch = 200;
     users = RespostasLake.select_users()
 
     comparasion_matrix = []
@@ -62,7 +54,7 @@ def compare_with_jaccard():
         current_user_response = RespostasLake.select_user_questions(user)
 
         for other_users in users:
-            if(other_users == user):
+            if other_users == user:
                 continue
 
             respostas_other_user = RespostasLake.select_user_questions(
@@ -81,8 +73,6 @@ def compare_with_jaccard():
         #comparasion_matrix[user][other_users] = respostas
         #comparasion_matrix[other_users][user] = respostas
 
-
-
     return jsonify(comparasion_matrix)
 
 @jaccard.route('/', methods=['GET'])
@@ -91,15 +81,7 @@ def get_all_respostas():
 
     return jsonify([r.to_dict() for r in respostas])
 
-
-
 @jaccard.route('/no-timestamp', methods=['GET'])
 def get_all_respostas_no_timestamp():
     respostas = RespostasLake.query.all()
     return jsonify([r.to_dict() for r in respostas])
-
-
-
-
-
-

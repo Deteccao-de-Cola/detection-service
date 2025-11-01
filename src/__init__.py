@@ -15,7 +15,10 @@ MYSQL_DB = 'tccdb'
 MYSQL_PORT = 3306
 
 
-app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}'
+app.config['SQLALCHEMY_DATABASE_URI'] = (
+    f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@"
+    f"{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
