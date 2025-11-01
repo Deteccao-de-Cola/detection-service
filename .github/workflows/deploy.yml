@@ -26,27 +26,26 @@ jobs:
             python -m pip install --upgrade pip
             pip install -r requirements.txt
 
-        - name: Analysing the code with pylint
+        - name: Analysing the code with pylint (score ≥ 9 required)
           run: |
-            pylint $(git ls-files '*.py')
-
-          run: |
-            set -e
             echo "🔍 Running pylint..."
-            pylint $(git ls-files '*.py') --score=y | tee pylint-report.txt
+            pylint $(git ls-files '*.py') --score=y | tee pylint-report.txt || true
 
             SCORE=$(grep "Your code has been rated at" pylint-report.txt | sed -E 's/.*rated at ([0-9\.]+)\/10.*/\1/')
             echo "🧮 Pylint score detected: $SCORE"
 
-            python3 - << 'EOF'
-            import sys
-score = float("${SCORE}")
-if score < 9:
-    print(f"❌ Build failed — Pylint score {score} is below 9.")
-    sys.exit(1)
-else:
-    print(f"✅ Pylint score {score} is good enough to pass.")
-EOF
+            if [ -z "$SCORE" ]; then
+              echo "❌ Não foi possível obter a nota do pylint."
+              exit 1
+            fi
+
+            python3 -c "import sys; s=float('$SCORE'); sys.exit(0 if s >= 9 else 1)"
+            if [ $? -eq 0 ]; then
+              echo "✅ Pylint score $SCORE é suficiente (>= 9)"
+            else
+              echo "❌ Pylint score $SCORE é abaixo de 9 — build falhou."
+              exit 1
+            fi
     test:
         runs-on: ubuntu-latest
         needs: build
