@@ -9,7 +9,7 @@ import json
 
 class JaccardService:
     def init_worker():
-        from src import app, db  # Import from your main app file
+        from src import app, db 
         
         app.app_context().push()
         db.engine.dispose()
@@ -42,7 +42,7 @@ class JaccardService:
             for other_user in all_users:
                 if other_user == user:
                     continue
-                
+
                 respostas_other_user = RespostasLake.select_user_questions(other_user)
                 jaccard_result = JaccardService.compare(current_user_response, respostas_other_user)
                 #print(user, other_user, len(current_user_response), len(respostas_other_user), jaccard_result)
@@ -85,10 +85,7 @@ class JaccardService:
             
         return intersection / union 
 
-
-
     def generate_jaccard_pie_chart(comparison_matrix, filename='jaccard_distribution.png'):
-        
         jaccard_indices = [item['jaccard_index'] for item in comparison_matrix]
         
         def categorize_index(index):
