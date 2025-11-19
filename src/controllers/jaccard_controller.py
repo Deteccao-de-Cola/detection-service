@@ -1,6 +1,10 @@
 from flask import Flask, jsonify, request, Blueprint
 from src.models.respostas_lake import db, RespostasLake
-from src.services.jaccard_service import JaccardService
+from src.services.users_service import *
+from src.services.jaccard_service import *
+from multiprocessing import Pool, cpu_count
+from functools import partial
+import numpy as np
 
 jaccard = Blueprint("jaccard", __name__)
 
@@ -48,37 +52,29 @@ jaccard = Blueprint("jaccard", __name__)
 @jaccard.route('/compare', methods=['GET'])
 def compare_with_jaccard():
     users = RespostasLake.select_users()
+    
+    num_processes = cpu_count()
+    
+    user_batches = UsersService.create_batches(users, num_processes)
+    process_func = partial(JaccardService.process_user_batch, all_users=users, index_min=0.3)
+    
+    with Pool(processes=num_processes, initializer=JaccardService.init_worker) as pool:
+        results = pool.map(process_func, user_batches)
 
-    comparasion_matrix = []
-    for user in users:
-        current_user_response = RespostasLake.select_user_questions(user)
+    comparison_matrix = [item for batch in results for item in batch]
+    chart_filename = JaccardService.generate_jaccard_pie_chart(comparison_matrix)
 
-        for other_users in users:
-            if other_users == user:
-                continue
+    return jsonify({
+        'chart_filename': chart_filename,
+        'comparison_matrix': [{'user' : item['user'], 'compared_with': item['compared_with'], 'jaccard_index': item['jaccard_index']} for item in sorted(comparison_matrix, key=lambda x: x['jaccard_index'], reverse=True)[:15]],
+        'total_collected': len(comparison_matrix)
+    })
 
-            respostas_other_user = RespostasLake.select_user_questions(
-                other_users
-            )
-
-            respostas = JaccardService.compare(current_user_response,
-                                               respostas_other_user)
-            comparasion_matrix.append([{
-                'user': user,
-                'compared_with': other_users,
-                'jaccard_index': respostas,
-                'response_other': respostas_other_user,
-                'user_resp': current_user_response
-            }])
-        #comparasion_matrix[user][other_users] = respostas
-        #comparasion_matrix[other_users][user] = respostas
-
-    return jsonify(comparasion_matrix)
 
 @jaccard.route('/', methods=['GET'])
 def get_all_respostas():
     respostas = RespostasLake.query.all()
-
+    
     return jsonify([r.to_dict() for r in respostas])
 
 @jaccard.route('/no-timestamp', methods=['GET'])

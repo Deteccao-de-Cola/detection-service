@@ -38,3 +38,5 @@ Flask-MySQLdb>=2.0.0
 mysqlclient>=2.2.4
 PyMySQL>=1.1.2
 cryptography>=46.0.2
+numpy>=2.2.0
+matplotlib>=3.0.0
