@@ -33,17 +33,17 @@ class JaccardService:
         return JaccardService.jaccardIndex(user1_responses, user2_responses)
     
     @staticmethod
-    def process_user_batch(user_batch, all_users, index_min):
+    def process_user_batch(user_batch, all_users, index_min, examId = None):
         batch_results = []
         
         for user in user_batch:
-            current_user_response = RespostasLake.select_user_questions(user)
+            current_user_response = RespostasLake.select_user_questions(user, examId)
             #if(len(current_user_response) > 3):
             for other_user in all_users:
                 if other_user == user:
                     continue
 
-                respostas_other_user = RespostasLake.select_user_questions(other_user)
+                respostas_other_user = RespostasLake.select_user_questions(other_user, examId)
                 jaccard_result = JaccardService.compare(current_user_response, respostas_other_user)
                 #print(user, other_user, len(current_user_response), len(respostas_other_user), jaccard_result)
                     
@@ -130,7 +130,7 @@ class JaccardService:
         plt.grid(axis='y', alpha=0.3, linestyle='--')
 
         plt.tight_layout()
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        plt.savefig("src/public/"+filename, dpi=300, bbox_inches='tight')
         plt.close()
 
         

@@ -1,10 +1,11 @@
-from flask import Flask, redirect
+from flask import Flask, redirect, send_from_directory
 from flasgger import Swagger
 from flask_sqlalchemy import SQLAlchemy
 from flask_mysqldb import MySQL
 from src.routes import api
 from src.config.config import Config
 from src.models.respostas_lake import db, RespostasLake
+import os
 
 app = Flask(__name__)
 
@@ -32,5 +33,10 @@ swagger = Swagger(app)
 @app.route("/")
 def root():
     return redirect("/api/")
+
+@app.route('/public/<path:filename>')
+def serve_public(filename):
+    public_folder = os.path.join(app.root_path, 'public')
+    return send_from_directory(public_folder, filename)
 
 app.register_blueprint(api, url_prefix="/api")
