@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, Blueprint
+from flask import jsonify, Blueprint
 from src.models.respostas_lake import db, RespostasLake
 
 respostas = Blueprint("respostas", __name__)

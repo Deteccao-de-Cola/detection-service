@@ -8,7 +8,7 @@ db = SQLAlchemy()
 
 class RespostasLake(db.Model):
     __tablename__ = 'respostas_lake'
-    
+
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     source_id = db.Column(db.Integer, nullable=False)
     contest_id = db.Column(db.Integer, nullable=True, default=0)
@@ -16,10 +16,10 @@ class RespostasLake(db.Model):
     item_id = db.Column(db.Integer, nullable=False)
     resposta_usuario = db.Column(db.String(255), nullable=True)
     user_id = db.Column(db.Integer, nullable=False)
-    
+
     def __repr__(self):
         return f'<RespostasLake {self.id} - {self.tipo_acao}>'
-    
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -35,17 +35,17 @@ class RespostasLake(db.Model):
     @staticmethod
     def select_users(examId=None, sourceId=None):
         users = RespostasLake.query.with_entities(RespostasLake.user_id)
-        
+
         if examId is not None:
             users = users.filter(RespostasLake.contest_id == examId)
-        
-        if examId is not None:
+
+        if sourceId is not None:
             users = users.filter(RespostasLake.source_id == sourceId)
-        
+
         users = users.distinct().order_by(RespostasLake.user_id).all()
-        
+
         return [u[0] for u in users]
-    
+
     @staticmethod
     def select_user_questions(user_id, examId=None, sourceId=None):
         data = {"idUser": user_id}
