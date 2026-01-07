@@ -51,7 +51,10 @@ jaccard = Blueprint("jaccard", __name__)
 '''
 @jaccard.route('/compare', methods=['GET'])
 def compare_with_jaccard():
-    users = RespostasLake.select_users()
+    examId = request.args.get('examId')
+    sourceId = request.args.get('sourceId')
+
+    users = RespostasLake.select_users(examId,sourceId)
     
     num_processes = cpu_count()
     
@@ -62,11 +65,12 @@ def compare_with_jaccard():
         results = pool.map(process_func, user_batches)
 
     comparison_matrix = [item for batch in results for item in batch]
-    chart_filename = JaccardService.generate_jaccard_pie_chart(comparison_matrix)
+    chart_base64 = JaccardService.generate_jaccard_pie_chart(comparison_matrix)
+
 
     return jsonify({
-        'chart_filename': chart_filename,
-        'comparison_matrix': [{'user' : item['user'], 'compared_with': item['compared_with'], 'jaccard_index': item['jaccard_index']} for item in sorted(comparison_matrix, key=lambda x: x['jaccard_index'], reverse=True)[:15]],
+        'chart_file': chart_base64,
+        'comparison_matrix': [{'user' : item['user'], 'compared_with': item['compared_with'], 'jaccard_index': item['jaccard_index'], 'totalUser' : len(item['user_resp']),  'totalComparedUser' : len(item['response_other'], )} for item in sorted(comparison_matrix, key=lambda x: x['jaccard_index'], reverse=True)[:15]],
         'total_collected': len(comparison_matrix)
     })
 

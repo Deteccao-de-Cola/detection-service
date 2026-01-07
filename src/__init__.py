@@ -1,4 +1,5 @@
-from flask import Flask, redirect
+import os
+from flask import Flask, redirect, send_from_directory
 from flasgger import Swagger
 from flask_sqlalchemy import SQLAlchemy
 from flask_mysqldb import MySQL
@@ -16,8 +17,8 @@ MYSQL_PORT = 3306
 
 
 app.config['SQLALCHEMY_DATABASE_URI'] = (
-    f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@"
-    f"{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+    f'mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}'
+    f'@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}'
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -35,5 +36,10 @@ swagger = Swagger(app)
 @app.route("/")
 def root():
     return redirect("/api/")
+
+@app.route('/public/<path:filename>')
+def serve_public(filename):
+    public_folder = os.path.join(app.root_path, 'public')
+    return send_from_directory(public_folder, filename)
 
 app.register_blueprint(api, url_prefix="/api")
