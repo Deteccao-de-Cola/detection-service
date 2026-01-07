@@ -1,10 +1,9 @@
-from flask import Flask, jsonify, request, Blueprint
-from src.models.respostas_lake import db, RespostasLake
-from src.services.users_service import *
-from src.services.jaccard_service import *
 from multiprocessing import Pool, cpu_count
 from functools import partial
-import numpy as np
+from flask import jsonify, request, Blueprint
+from src.models.respostas_lake import RespostasLake
+from src.services.users_service import UsersService
+from src.services.jaccard_service import JaccardService
 
 jaccard = Blueprint("jaccard", __name__)
 
@@ -51,34 +50,41 @@ jaccard = Blueprint("jaccard", __name__)
 '''
 @jaccard.route('/compare', methods=['GET'])
 def compare_with_jaccard():
-    examId = request.args.get('examId')
-    sourceId = request.args.get('sourceId')
-
-    users = RespostasLake.select_users(examId,sourceId)
-    
+    exam_id = request.args.get('examId')
+    source_id = request.args.get('sourceId')
+    users = RespostasLake.select_users(exam_id, source_id)
     num_processes = cpu_count()
-    
+    # pylint: disable=no-value-for-parameter
     user_batches = UsersService.create_batches(users, num_processes)
-    process_func = partial(JaccardService.process_user_batch, all_users=users, index_min=0.3)
-    
+    process_func = partial(JaccardService.process_user_batch, all_users=users)
+
     with Pool(processes=num_processes, initializer=JaccardService.init_worker) as pool:
         results = pool.map(process_func, user_batches)
 
     comparison_matrix = [item for batch in results for item in batch]
     chart_base64 = JaccardService.generate_jaccard_pie_chart(comparison_matrix)
-
+    # pylint: enable=no-value-for-parameter
 
     return jsonify({
         'chart_file': chart_base64,
-        'comparison_matrix': [{'user' : item['user'], 'compared_with': item['compared_with'], 'jaccard_index': item['jaccard_index'], 'totalUser' : len(item['user_resp']),  'totalComparedUser' : len(item['response_other'], )} for item in sorted(comparison_matrix, key=lambda x: x['jaccard_index'], reverse=True)[:15]],
+        'comparison_matrix': (
+            [
+                {'user' : item['user'],
+                'compared_with': item['compared_with'],
+                'jaccard_index': item['jaccard_index'],
+                'totalUser' : len(item['user_resp']),
+                'totalComparedUser' : len(item['response_other'], )}
+                  for item in sorted(
+                    comparison_matrix,
+                    key=lambda x: x['jaccard_index'],
+                    reverse=True)[:15]]
+                ),
         'total_collected': len(comparison_matrix)
     })
-
 
 @jaccard.route('/', methods=['GET'])
 def get_all_respostas():
     respostas = RespostasLake.query.all()
-    
     return jsonify([r.to_dict() for r in respostas])
 
 @jaccard.route('/no-timestamp', methods=['GET'])
