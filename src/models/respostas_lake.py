@@ -1,8 +1,4 @@
-from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
-from sqlalchemy import func
-from sqlalchemy.orm import aliased
 
 db = SQLAlchemy()
 
@@ -33,51 +29,51 @@ class RespostasLake(db.Model):
         }
 
     @staticmethod
-    def select_users(examId=None, sourceId=None):
+    def select_users(exam_id=None, source_id=None):
         users = RespostasLake.query.with_entities(RespostasLake.user_id)
 
-        if examId is not None:
-            users = users.filter(RespostasLake.contest_id == examId)
+        if exam_id is not None:
+            users = users.filter(RespostasLake.contest_id == exam_id)
 
-        if sourceId is not None:
-            users = users.filter(RespostasLake.source_id == sourceId)
+        if source_id is not None:
+            users = users.filter(RespostasLake.source_id == source_id)
 
         users = users.distinct().order_by(RespostasLake.user_id).all()
 
         return [u[0] for u in users]
 
     @staticmethod
-    def select_user_questions(user_id, examId=None, sourceId=None):
+    def select_user_questions(user_id, exam_id=None, source_id=None):
         data = {"idUser": user_id}
 
         sql = """SELECT id, item_id, respondida_em, user_id, resposta_usuario
         FROM respostas_lake rl1
         WHERE user_id = :idUser"""
-        
-        if examId is not None:
-            data["examId"] = examId
+
+        if exam_id is not None:
+            data["examId"] = exam_id
             sql += """ AND contest_id = :examId"""
-        
-        if sourceId is not None:
-            data["sourceId"] = sourceId
+
+        if source_id is not None:
+            data["sourceId"] = source_id
             sql += """ AND source_id = :sourceId"""
-        
+
         sql += """
         AND respondida_em = (
             SELECT MAX(respondida_em)
             FROM respostas_lake rl2
             WHERE rl2.item_id = rl1.item_id
                 AND rl2.user_id = :idUser"""
-        
-        if examId is not None:
+
+        if exam_id is not None:
             sql += """ AND rl2.contest_id = :examId"""
-        if sourceId is not None:
+        if source_id is not None:
             sql += """ AND rl2.source_id = :sourceId"""
-        
+
         sql += """)
         ORDER BY item_id ASC;"""
 
         result = db.session.execute(db.text(sql), data)
         rows = result.fetchall()
-
+        # pylint: disable=protected-access
         return [dict(row._mapping) for row in rows]
