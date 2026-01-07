@@ -9,6 +9,3 @@ api = Blueprint('api', __name__)
 api.register_blueprint(home, url_prefix="/")
 api.register_blueprint(respostas, url_prefix="/respostas")
 api.register_blueprint(jaccard, url_prefix="/jaccard")
-
-
-
