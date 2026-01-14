@@ -3,7 +3,8 @@ from functools import partial
 from flask import jsonify, request, Blueprint
 from src.models.respostas_lake import RespostasLake
 from src.services.users_service import UsersService
-from src.services.jaccard_service import JaccardService
+from src.services.comparasion_service import ComparisonService
+from src.services.graph_service import GraphService
 
 jaccard = Blueprint("jaccard", __name__)
 
@@ -50,23 +51,32 @@ jaccard = Blueprint("jaccard", __name__)
 '''
 @jaccard.route('/compare', methods=['GET'])
 def compare_with_jaccard():
+    from src import db
+
     exam_id = request.args.get('examId')
     source_id = request.args.get('sourceId')
     users = RespostasLake.select_users(exam_id, source_id)
+    db.engine.dispose()
+
     num_processes = cpu_count()
     # pylint: disable=no-value-for-parameter
     user_batches = UsersService.create_batches(users, num_processes)
-    process_func = partial(JaccardService.process_user_batch, all_users=users)
+    process_func = partial(ComparisonService.process_user_batch,
+                          all_users=users,
+                          exam_id=exam_id,
+                          metrics='jaccard')
 
-    with Pool(processes=num_processes, initializer=JaccardService.init_worker) as pool:
+    with Pool(processes=num_processes, initializer=ComparisonService.init_worker) as pool:
         results = pool.map(process_func, user_batches)
 
     comparison_matrix = [item for batch in results for item in batch]
-    chart_base64 = JaccardService.generate_jaccard_pie_chart(comparison_matrix)
+    chart_filename = GraphService.generate_similarity_chart(comparison_matrix,
+                                                             'jaccard_index',
+                                                             'Distribuição da Similaridade Jaccard',
+                                                             'jaccard_distribution.png')
     # pylint: enable=no-value-for-parameter
-
     return jsonify({
-        'chart_file': chart_base64,
+        'chart_file': chart_filename,
         'comparison_matrix': (
             [
                 {'user' : item['user'],

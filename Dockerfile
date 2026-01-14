@@ -10,7 +10,8 @@ RUN apk update && apk add --no-cache \
     mariadb-connector-c-dev \
     pkgconfig \
     python3-dev \
-    build-base
+    build-base \
+    curl
 
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
@@ -20,6 +21,10 @@ COPY . .
 # Default to Flask development server for auto-reload
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=development
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
 
 # Use CMD instead of ENTRYPOINT for easier override
 CMD ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=8000", "--reload"]
