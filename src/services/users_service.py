@@ -1,6 +1,7 @@
 class UsersService:
 
-    def create_batches(self, users, num_processes):
+    @staticmethod
+    def create_batches(users, num_processes):
 
         if len(users) == 0:
             return users

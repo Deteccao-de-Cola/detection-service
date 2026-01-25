@@ -39,7 +39,7 @@ class RespostasLake(db.Model):
             users = users.filter(RespostasLake.source_id == source_id)
 
         users = users.distinct().order_by(RespostasLake.user_id).all()
-
+        print("USERRRS", exam_id, source_id)
         return [u[0] for u in users]
 
     @staticmethod
@@ -49,7 +49,6 @@ class RespostasLake(db.Model):
         sql = """SELECT id, item_id, respondida_em, user_id, resposta_usuario
         FROM respostas_lake rl1
         WHERE user_id = :idUser"""
-
         if exam_id is not None:
             data["examId"] = exam_id
             sql += """ AND contest_id = :examId"""
@@ -73,7 +72,10 @@ class RespostasLake(db.Model):
         sql += """)
         ORDER BY item_id ASC;"""
 
+        # print("My Data", sql, data)
         result = db.session.execute(db.text(sql), data)
         rows = result.fetchall()
+        # print(rows)
+
         # pylint: disable=protected-access
         return [dict(row._mapping) for row in rows]
