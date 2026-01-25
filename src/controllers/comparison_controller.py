@@ -1,15 +1,18 @@
+# pylint: disable=duplicate-code
+# Controllers share similar structure for each similarity metric endpoint.
+# Intentional duplication to maintain separation of concerns per algorithm.
 from multiprocessing import Pool, cpu_count
 from functools import partial
 from flask import jsonify, request, Blueprint
 from src.models.respostas_lake import RespostasLake
 from src.services.users_service import UsersService
 from src.services.comparasion_service import ComparisonService
-from src.services.graph_service import GraphService
 
 comparison = Blueprint("comparison", __name__)
 
 @comparison.route('/compare', methods=['GET'])
 def compare_similarity():
+    # pylint: disable=import-outside-toplevel
     from src import db
 
     exam_id = request.args.get('examId')
@@ -42,13 +45,6 @@ def compare_similarity():
     }
 
     if metric in ['jaccard', 'both']:
-        jaccard_chart = GraphService.generate_similarity_chart(
-            comparison_matrix,
-            'jaccard_index',
-            'Distribuição da Similaridade Jaccard',
-            'jaccard_distribution.png'
-        )
-        response_data['jaccard_chart_file'] = jaccard_chart
 
         response_data['comparison_matrix'].extend([
             {
@@ -67,13 +63,6 @@ def compare_similarity():
         ])
 
     if metric in ['dl', 'both']:
-        dl_chart = GraphService.generate_similarity_chart(
-            comparison_matrix,
-            'dl_similarity',
-            'Distribuição da Similaridade Damerau-Levenshtein',
-            'dl_distribution.png'
-        )
-        response_data['dl_chart_file'] = dl_chart
 
         if metric == 'dl':
             response_data['comparison_matrix'] = [

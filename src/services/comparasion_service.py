@@ -13,7 +13,7 @@ class ComparisonService:
 
     # pylint: enable=no-method-argument,redefined-outer-name,reimported,import-outside-toplevel
     @staticmethod
-    def compare(contest, contest_to_be_compared, comparasionFunction):
+    def compare(contest, contest_to_be_compared, comparasion_function):
         user1_dict = {item['item_id']: item['resposta_usuario'] for item in contest}
         user2_dict = {item['item_id']: item['resposta_usuario'] for item in contest_to_be_compared}
 
@@ -28,7 +28,7 @@ class ComparisonService:
             resp2 = user2_dict.get(item_id, None)
             user2_responses.add((item_id, resp2))
 
-        return comparasionFunction(user1_responses, user2_responses)
+        return comparasion_function(user1_responses, user2_responses)
 
     @staticmethod
     def process_user_batch(user_batch, all_users, exam_id=None, metrics='both'):
@@ -36,6 +36,7 @@ class ComparisonService:
         batch_results = []
 
         for user in user_batch:
+
             current_user_response = RespostasLake.select_user_questions(user, exam_id)
             for other_user in all_users:
                 if other_user == user:
@@ -44,6 +45,7 @@ class ComparisonService:
                 respostas_other_user = RespostasLake.select_user_questions(other_user, exam_id)
                 jaccard_result = None
                 dl_result = None
+                # {item['item_id']: item['resposta_usuario'] for item in contest}
 
                 if metrics in ['jaccard', 'both']:
                     jaccard_result = ComparisonService.compare(current_user_response,
@@ -52,30 +54,30 @@ class ComparisonService:
 
                 if metrics in ['dl', 'both']:
                     dl_result = ComparisonService.compare(current_user_response,
-                                                                respostas_other_user,
-                                                                DamerauLevenshteinService.damerau_levenshtein_similarity)
+                                                            respostas_other_user,
+                                                            DamerauLevenshteinService.damerau_levenshtein_similarity)  # pylint: disable=line-too-long
 
-                should_append = False
-                if metrics == 'jaccard' and jaccard_result and jaccard_result > 0.01:
-                    should_append = True
-                elif metrics == 'dl' and dl_result and dl_result > 0.01:
-                    should_append = True
-                elif metrics == 'both' and jaccard_result and jaccard_result > 0.01:
-                    should_append = True
+                # should_append = False
+                # if metrics == 'jaccard' and jaccard_result and jaccard_result > 0.01:
+                #     should_append = True
+                # elif metrics == 'dl' and dl_result and dl_result > 0.01:
+                #     should_append = True
+                # elif metrics == 'both' and jaccard_result and jaccard_result > 0.01:
+                #     should_append = True
 
-                if should_append:
-                    result = {
-                        'user': user,
-                        'compared_with': other_user,
-                        'response_other': respostas_other_user,
-                        'user_resp': current_user_response
-                    }
+                # if should_append:
+                result = {
+                    'user': user,
+                    'compared_with': other_user,
+                    'response_other': respostas_other_user,
+                    'user_resp': current_user_response
+                }
 
-                    if jaccard_result is not None:
-                        result['jaccard_index'] = jaccard_result
-                    if dl_result is not None:
-                        result['dl_similarity'] = dl_result
+                if jaccard_result is not None:
+                    result['jaccard_index'] = jaccard_result
+                if dl_result is not None:
+                    result['dl_similarity'] = dl_result
 
-                    batch_results.append(result)
+                batch_results.append(result)
 
         return batch_results

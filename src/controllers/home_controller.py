@@ -13,3 +13,14 @@ def hello():
         status=200,
         mimetype='application/json'
     )
+
+@home.route('health', methods = ["GET"])
+def health():
+    return Response(
+        response=json.dumps({
+            'status': "success",
+            "message": "Detection Service health!"
+        }),
+        status=200,
+        mimetype='application/json'
+    )

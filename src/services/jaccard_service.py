@@ -1,8 +1,3 @@
-from collections import Counter
-import matplotlib.pyplot as plt
-from src.models.respostas_lake import RespostasLake
-from datetime import datetime
-
 class JaccardService:
     # pylint: disable=pointless-string-statement
     '''
@@ -27,5 +22,3 @@ class JaccardService:
             return 0
 
         return intersection / union
- 
-    

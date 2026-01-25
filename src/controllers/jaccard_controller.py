@@ -1,10 +1,10 @@
+# pylint: disable=duplicate-code
 from multiprocessing import Pool, cpu_count
 from functools import partial
 from flask import jsonify, request, Blueprint
 from src.models.respostas_lake import RespostasLake
 from src.services.users_service import UsersService
 from src.services.comparasion_service import ComparisonService
-from src.services.graph_service import GraphService
 
 jaccard = Blueprint("jaccard", __name__)
 
@@ -51,6 +51,7 @@ jaccard = Blueprint("jaccard", __name__)
 '''
 @jaccard.route('/compare', methods=['GET'])
 def compare_with_jaccard():
+    # pylint: disable=import-outside-toplevel
     from src import db
 
     exam_id = request.args.get('examId')
@@ -70,13 +71,9 @@ def compare_with_jaccard():
         results = pool.map(process_func, user_batches)
 
     comparison_matrix = [item for batch in results for item in batch]
-    chart_filename = GraphService.generate_similarity_chart(comparison_matrix,
-                                                             'jaccard_index',
-                                                             'Distribuição da Similaridade Jaccard',
-                                                             'jaccard_distribution.png')
+
     # pylint: enable=no-value-for-parameter
     return jsonify({
-        'chart_file': chart_filename,
         'comparison_matrix': (
             [
                 {'user' : item['user'],
