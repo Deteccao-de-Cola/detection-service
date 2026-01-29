@@ -38,7 +38,6 @@ docker compose up -d
 ```
 
 ---
-
 Acesse o API via:
 
 [0.0.0.0:8000](http://0.0.0.0:8000)
