@@ -1,5 +1,8 @@
 services:
   api:
+    build:
+      context: .
+      target: builder
     image: dougfarias/detection-service:latest
     container_name: detection-service
     ports: 
