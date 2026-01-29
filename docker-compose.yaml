@@ -15,7 +15,6 @@ services:
       - FLASK_APP=src:app
       - FLASK_ENV=development
       - FLASK_DEBUG=1
-    entrypoint: []
     command: python -m flask run --host=0.0.0.0 --port=8000 --reload
 
 networks:
