@@ -37,6 +37,10 @@ swagger = Swagger(app)
 def root():
     return redirect("/api/")
 
+@app.route("/health")
+def health():
+    return {"status": "healthy"}, 200
+
 @app.route('/public/<path:filename>')
 def serve_public(filename):
     public_folder = os.path.join(app.root_path, 'public')
