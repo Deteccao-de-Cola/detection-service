@@ -1,6 +1,6 @@
 services:
   api:
-    image: guipeeix/detection-service:latest
+    image: dougfarias/detection-service:latest
     container_name: detection-service
     ports: 
       - '8000:8000'
