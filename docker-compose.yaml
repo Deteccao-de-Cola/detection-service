@@ -1,9 +1,7 @@
 services:
   api:
+    image: guipeeix/detection-service:latest
     container_name: detection-service
-    build:
-      context: .
-      target: builder
     ports: 
       - '8000:8000'
     volumes:
