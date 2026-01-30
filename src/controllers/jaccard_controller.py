@@ -11,7 +11,7 @@ jaccard = Blueprint("jaccard", __name__)
 '''
     Queries importantes:
     -- Conta o número de usuários distintos na base:
-        SELECT COUNT(DISTINCT(user_id)) FROM tccunb.respostas;
+        SELECT COUNT(DISTINCT(userId)) FROM tccunb.respostas;
     -- Para cada um dos usuários seleciona o worker e faz a comparação de
         acordo com as questões que o usuário de index tiver
     -- For each (usuário)
@@ -55,8 +55,8 @@ def compare_with_jaccard():
     from src import db
 
     exam_id = request.args.get('examId')
-    source_id = request.args.get('sourceId')
-    users = RespostasLake.select_users(exam_id, source_id)
+    sourceId = request.args.get('sourceId')
+    users = RespostasLake.select_users(exam_id, sourceId)
     db.engine.dispose()
 
     num_processes = cpu_count()

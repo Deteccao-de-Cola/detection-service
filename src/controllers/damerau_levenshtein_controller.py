@@ -14,8 +14,8 @@ def compare_with_damerau_levenshtein():
     from src import db
 
     exam_id = request.args.get('examId')
-    source_id = request.args.get('sourceId')
-    users = RespostasLake.select_users(exam_id, source_id)
+    sourceId = request.args.get('sourceId')
+    users = RespostasLake.select_users(exam_id, sourceId)
     db.engine.dispose()
 
     num_processes = cpu_count()

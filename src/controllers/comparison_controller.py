@@ -16,13 +16,13 @@ def compare_similarity():
     from src import db
 
     exam_id = request.args.get('examId')
-    source_id = request.args.get('sourceId')
+    sourceId = request.args.get('sourceId')
     metric = request.args.get('metric', 'both')
 
     if metric not in ['jaccard', 'dl', 'both']:
         return jsonify({'error': 'Invalid metric. Must be "jaccard", "dl", or "both"'}), 400
 
-    users = RespostasLake.select_users(exam_id, source_id)
+    users = RespostasLake.select_users(exam_id, sourceId)
     db.engine.dispose()
 
     num_processes = cpu_count()

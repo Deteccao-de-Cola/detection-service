@@ -14,19 +14,19 @@ class ComparisonService:
     # pylint: enable=no-method-argument,redefined-outer-name,reimported,import-outside-toplevel
     @staticmethod
     def compare(contest, contest_to_be_compared, comparasion_function):
-        user1_dict = {item['item_id']: item['resposta_usuario'] for item in contest}
-        user2_dict = {item['item_id']: item['resposta_usuario'] for item in contest_to_be_compared}
+        user1_dict = {item['itemId']: item['respostaUsuario'] for item in contest}
+        user2_dict = {item['itemId']: item['respostaUsuario'] for item in contest_to_be_compared}
 
         all_items = set(user1_dict.keys()) | set(user2_dict.keys())
 
         user1_responses = set()
         user2_responses = set()
-        for item_id in all_items:
-            resp1 = user1_dict.get(item_id, None)
-            user1_responses.add((item_id, resp1))
+        for itemId in all_items:
+            resp1 = user1_dict.get(itemId, None)
+            user1_responses.add((itemId, resp1))
 
-            resp2 = user2_dict.get(item_id, None)
-            user2_responses.add((item_id, resp2))
+            resp2 = user2_dict.get(itemId, None)
+            user2_responses.add((itemId, resp2))
 
         return comparasion_function(user1_responses, user2_responses)
 
@@ -45,7 +45,7 @@ class ComparisonService:
                 respostas_other_user = RespostasLake.select_user_questions(other_user, exam_id)
                 jaccard_result = None
                 dl_result = None
-                # {item['item_id']: item['resposta_usuario'] for item in contest}
+                # {item['itemId']: item['respostaUsuario'] for item in contest}
 
                 if metrics in ['jaccard', 'both']:
                     jaccard_result = ComparisonService.compare(current_user_response,
