@@ -12,6 +12,7 @@ services:
     environment:
       - FLASK_APP=src:app
       - FLASK_ENV=production
+    restart: always
 
 networks:
   tcc-cola-network:
