@@ -53,7 +53,11 @@ def compare_similarity():
                 'jaccard_index': item.get('jaccard_index'),
                 'dl_similarity': item.get('dl_similarity'),
                 'totalUser': len(item['user_resp']),
-                'totalComparedUser': len(item['response_other'])
+                'totalComparedUser': len(item['response_other']),
+                'time_result_diff': item['time_result'],
+                'user_1_avarage_time': item['user_1_avarage_time'],
+                'user_2_avarage_time': item['user_2_avarage_time'],
+
             }
             for item in sorted(
                 comparison_matrix,
