@@ -1,3 +1,4 @@
+from datetime import datetime
 from src.models.respostas_lake import RespostasLake
 from src.services.damerau_levenshtein_service import DamerauLevenshteinService
 from src.services.jaccard_service import JaccardService
@@ -53,6 +54,8 @@ class ComparisonService:
                                                                 JaccardService.jaccard_index)
 
                 if metrics in ['dl', 'both']:
+                    print("Users =>", other_user , user)
+
                     dl_result = ComparisonService.compare(current_user_response,
                                                             respostas_other_user,
                                                             DamerauLevenshteinService.damerau_levenshtein_similarity)  # pylint: disable=line-too-long
@@ -70,7 +73,13 @@ class ComparisonService:
                     'user': user,
                     'compared_with': other_user,
                     'response_other': respostas_other_user,
-                    'user_resp': current_user_response
+                    'user_resp': current_user_response,
+                    'time_result_diff': ComparisonService._calc_time_diff(
+                        current_user_response, respostas_other_user),
+                    'user_1_avarage_time': ComparisonService._calc_avg_interval(
+                        current_user_response),
+                    'user_2_avarage_time': ComparisonService._calc_avg_interval(
+                        respostas_other_user),
                 }
 
                 if jaccard_result is not None:
@@ -81,3 +90,39 @@ class ComparisonService:
                 batch_results.append(result)
 
         return batch_results
+
+    @staticmethod
+    def _to_timestamp(t):
+        if t is None:
+            return None
+        if isinstance(t, datetime):
+            return t.timestamp()
+        try:
+            return datetime.strptime(str(t), '%Y-%m-%d %H:%M:%S').timestamp()
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _calc_time_diff(user_resp, response_other):
+        user_times = {item['itemId']: ComparisonService._to_timestamp(item.get('respondidaEm'))
+                      for item in user_resp}
+        other_times = {item['itemId']: ComparisonService._to_timestamp(item.get('respondidaEm'))
+                       for item in response_other}
+
+        diffs = [
+            abs(user_times[item_id] - other_times[item_id])
+            for item_id in set(user_times) & set(other_times)
+            if user_times[item_id] is not None and other_times[item_id] is not None
+        ]
+        return sum(diffs) / len(diffs) if diffs else None
+
+    @staticmethod
+    def _calc_avg_interval(user_resp):
+        timestamps = sorted(filter(None, [
+            ComparisonService._to_timestamp(item.get('respondidaEm'))
+            for item in user_resp
+        ]))
+        if len(timestamps) < 2:
+            return None
+        intervals = [timestamps[i + 1] - timestamps[i] for i in range(len(timestamps) - 1)]
+        return sum(intervals) / len(intervals)
