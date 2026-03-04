@@ -1,9 +1,8 @@
 import os
 from flask import Flask, redirect, send_from_directory
-from flasgger import Swagger
+from flask_smorest import Api
 from flask_sqlalchemy import SQLAlchemy
 from flask_mysqldb import MySQL
-from src.routes import api
 from src.config.config import Config
 from src.models.respostas_lake import db, RespostasLake
 
@@ -22,20 +21,23 @@ app.config['SQLALCHEMY_DATABASE_URI'] = (
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+app.config['API_TITLE'] = 'Detection Service API'
+app.config['API_VERSION'] = 'v1'
+app.config['OPENAPI_VERSION'] = '3.0.3'
+app.config['OPENAPI_URL_PREFIX'] = '/'
+app.config['OPENAPI_SWAGGER_UI_PATH'] = '/swagger-ui'
+app.config['OPENAPI_SWAGGER_UI_URL'] = 'https://cdn.jsdelivr.net/npm/swagger-ui-dist/'
+
 db.init_app(app)
 
 config = Config().dev_config
-
 app.env = config.ENV
 
-app.config['SWAGGER'] = {
-    'title': 'Detection Service API',
-}
-swagger = Swagger(app)
+smorest_api = Api(app)
 
 @app.route("/")
 def root():
-    return redirect("/api/")
+    return redirect("/swagger-ui")
 
 @app.route("/health")
 def health():
@@ -46,4 +48,6 @@ def serve_public(filename):
     public_folder = os.path.join(app.root_path, 'public')
     return send_from_directory(public_folder, filename)
 
-app.register_blueprint(api, url_prefix="/api")
+from src.routes import blueprints  # noqa: E402
+for blp, prefix in blueprints:
+    smorest_api.register_blueprint(blp, url_prefix=prefix)

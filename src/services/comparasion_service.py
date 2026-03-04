@@ -32,34 +32,53 @@ class ComparisonService:
         return comparasion_function(user1_responses, user2_responses)
 
     @staticmethod
+    def compare_by_timestamp(contest, contest_to_be_compared, comparasion_function):
+        user1_responses = [
+            (item['itemId'], item['respostaUsuario'])
+            for item in contest
+        ]
+        user2_responses = [
+            (item['itemId'], item['respostaUsuario'])
+            for item in contest_to_be_compared
+        ]
+        return comparasion_function(user1_responses, user2_responses)
+
+    @staticmethod
     def process_user_batch(user_batch, all_users, exam_id=None, metrics='both'):
 
         batch_results = []
 
+        with_timestamp = RespostasLake.get_salvar_tempo_resposta(exam_id) if exam_id is not None else True
+
+        # print("user_batch", user_batch)
+        # print("all_users", all_users)
+
         for user in user_batch:
 
-            current_user_response = RespostasLake.select_user_questions(user, exam_id)
+            current_user_response = RespostasLake.select_user_questions(user, exam_id, withTimestamp=with_timestamp)
+            # current_user_response_by_time = RespostasLake.select_user_questions(user, exam_id, orderByTimestamp=True)
             for other_user in all_users:
                 if other_user == user:
                     continue
 
-                respostas_other_user = RespostasLake.select_user_questions(other_user, exam_id)
+                respostas_other_user = RespostasLake.select_user_questions(other_user, exam_id, withTimestamp=with_timestamp)
+                # respostas_other_user_by_time = RespostasLake.select_user_questions(other_user, exam_id, orderByTimestamp=True)
+                print("The users", user, other_user)
                 jaccard_result = None
                 dl_result = None
                 # {item['itemId']: item['respostaUsuario'] for item in contest}
+                # print(other_user,  user)
 
                 if metrics in ['jaccard', 'both']:
+                    # print(current_user_response, respostas_other_user)
                     jaccard_result = ComparisonService.compare(current_user_response,
                                                                 respostas_other_user,
                                                                 JaccardService.jaccard_index)
 
-                if metrics in ['dl', 'both']:
-                    print("Users =>", other_user , user)
-
-                    dl_result = ComparisonService.compare(current_user_response,
-                                                            respostas_other_user,
-                                                            DamerauLevenshteinService.damerau_levenshtein_similarity)  # pylint: disable=line-too-long
-
+                # if metrics in ['dl', 'both']:
+                #     dl_result = ComparisonService.compare_by_timestamp(current_user_response_by_time,
+                #                                             respostas_other_user_by_time,
+                #                                             DamerauLevenshteinService.damerau_levenshtein_similarity_any_swap)  # pylint: disable=line-too-long
                 # should_append = False
                 # if metrics == 'jaccard' and jaccard_result and jaccard_result > 0.01:
                 #     should_append = True
@@ -114,7 +133,7 @@ class ComparisonService:
             for item_id in set(user_times) & set(other_times)
             if user_times[item_id] is not None and other_times[item_id] is not None
         ]
-        return sum(diffs) / len(diffs) if diffs else None
+        return round(sum(diffs) / len(diffs)) if diffs else None
 
     @staticmethod
     def _calc_avg_interval(user_resp):
@@ -125,4 +144,4 @@ class ComparisonService:
         if len(timestamps) < 2:
             return None
         intervals = [timestamps[i + 1] - timestamps[i] for i in range(len(timestamps) - 1)]
-        return sum(intervals) / len(intervals)
+        return round(sum(intervals) / len(intervals))

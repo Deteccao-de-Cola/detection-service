@@ -3,24 +3,32 @@
 # Intentional duplication to maintain separation of concerns per algorithm.
 from multiprocessing import Pool, cpu_count
 from functools import partial
-from flask import jsonify, request, Blueprint
+from flask_smorest import Blueprint
 from src.models.respostas_lake import RespostasLake
 from src.services.users_service import UsersService
 from src.services.comparasion_service import ComparisonService
+from src.services.question_level_service import QuestionLevelService
+from src.schemas import (
+    CompareWithMetricQuerySchema,
+    ComparisonResponseSchema,
+    RespostaSchema,
+)
 
-comparison = Blueprint("comparison", __name__)
+comparison = Blueprint("comparison", __name__, description="Combined similarity comparison endpoints")
+
 
 @comparison.route('/compare', methods=['GET'])
-def compare_similarity():
+@comparison.arguments(CompareWithMetricQuerySchema, location='query')
+@comparison.response(200, ComparisonResponseSchema)
+def compare_similarity(query_args):
     # pylint: disable=import-outside-toplevel
     from src import db
 
-    exam_id = request.args.get('examId')
-    sourceId = request.args.get('sourceId')
-    metric = request.args.get('metric', 'both')
+    exam_id = query_args.get('examId')
+    sourceId = query_args.get('sourceId')
+    metric = query_args.get('metric', 'both')
 
-    if metric not in ['jaccard', 'dl', 'both']:
-        return jsonify({'error': 'Invalid metric. Must be "jaccard", "dl", or "both"'}), 400
+    contest_info = QuestionLevelService.recalculate_questions_level(exam_id)
 
     users = RespostasLake.select_users(exam_id, sourceId)
     db.engine.dispose()
@@ -41,11 +49,11 @@ def compare_similarity():
 
     response_data = {
         'comparison_matrix': [],
-        'total_collected': len(comparison_matrix)
+        'total_collected': len(comparison_matrix),
+        'contest_info': contest_info
     }
 
     if metric in ['jaccard', 'both']:
-
         response_data['comparison_matrix'].extend([
             {
                 'user': item['user'],
@@ -53,7 +61,10 @@ def compare_similarity():
                 'jaccard_index': item.get('jaccard_index'),
                 'dl_similarity': item.get('dl_similarity'),
                 'totalUser': len(item['user_resp']),
-                'totalComparedUser': len(item['response_other'])
+                'totalComparedUser': len(item['response_other']),
+                'time_result_diff': item.get('time_result_diff'),
+                'user_1_avarage_time': item.get('user_1_avarage_time'),
+                'user_2_avarage_time': item.get('user_2_avarage_time'),
             }
             for item in sorted(
                 comparison_matrix,
@@ -62,33 +73,36 @@ def compare_similarity():
             )
         ])
 
-    if metric in ['dl', 'both']:
-
-        if metric == 'dl':
-            response_data['comparison_matrix'] = [
-                {
-                    'user': item['user'],
-                    'compared_with': item['compared_with'],
-                    'dl_similarity': item.get('dl_similarity'),
-                    'totalUser': len(item['user_resp']),
-                    'totalComparedUser': len(item['response_other'])
-                }
-                for item in sorted(
-                    comparison_matrix,
-                    key=lambda x: x.get('dl_similarity', 0),
-                    reverse=True
-                )
-            ]
+    if metric == 'dl':
+        response_data['comparison_matrix'] = [
+            {
+                'user': item['user'],
+                'compared_with': item['compared_with'],
+                'dl_similarity': item.get('dl_similarity'),
+                'totalUser': len(item['user_resp']),
+                'totalComparedUser': len(item['response_other']),
+                'time_result_diff': item.get('time_result_diff'),
+                'user_1_avarage_time': item.get('user_1_avarage_time'),
+                'user_2_avarage_time': item.get('user_2_avarage_time'),
+            }
+            for item in sorted(
+                comparison_matrix,
+                key=lambda x: x.get('dl_similarity', 0),
+                reverse=True
+            )
+        ]
 
     # pylint: enable=no-value-for-parameter
-    return jsonify(response_data)
+    return response_data
+
 
 @comparison.route('/', methods=['GET'])
+@comparison.response(200, RespostaSchema(many=True))
 def get_all_respostas():
-    respostas = RespostasLake.query.all()
-    return jsonify([r.to_dict() for r in respostas])
+    return RespostasLake.query.all()
+
 
 @comparison.route('/no-timestamp', methods=['GET'])
+@comparison.response(200, RespostaSchema(many=True))
 def get_all_respostas_no_timestamp():
-    respostas = RespostasLake.query.all()
-    return jsonify([r.to_dict() for r in respostas])
+    return RespostasLake.query.all()

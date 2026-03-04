@@ -1,20 +1,29 @@
 # pylint: disable=duplicate-code
 from multiprocessing import Pool, cpu_count
 from functools import partial
-from flask import jsonify, request, Blueprint
+from flask_smorest import Blueprint
 from src.models.respostas_lake import RespostasLake
 from src.services.users_service import UsersService
 from src.services.comparasion_service import ComparisonService
+from src.schemas import (
+    CompareQuerySchema,
+    DLComparisonResponseSchema,
+    RespostaSchema,
+)
 
-damerau_levenshtein = Blueprint("damerau_levenshtein", __name__)
+damerau_levenshtein = Blueprint(
+    "damerau_levenshtein", __name__, description="Damerau-Levenshtein similarity endpoints"
+)
 
 @damerau_levenshtein.route('/compare', methods=['GET'])
-def compare_with_damerau_levenshtein():
+@damerau_levenshtein.arguments(CompareQuerySchema, location='query')
+@damerau_levenshtein.response(200, DLComparisonResponseSchema)
+def compare_with_damerau_levenshtein(query_args):
     # pylint: disable=import-outside-toplevel
     from src import db
 
-    exam_id = request.args.get('examId')
-    sourceId = request.args.get('sourceId')
+    exam_id = query_args.get('examId')
+    sourceId = query_args.get('sourceId')
     users = RespostasLake.select_users(exam_id, sourceId)
     db.engine.dispose()
 
@@ -32,28 +41,32 @@ def compare_with_damerau_levenshtein():
     comparison_matrix = [item for batch in results for item in batch]
 
     # pylint: enable=no-value-for-parameter
-    return jsonify({
-        'comparison_matrix': (
-            [
-                {'user' : item['user'],
+    return {
+        'comparison_matrix': [
+            {
+                'user': item['user'],
                 'compared_with': item['compared_with'],
                 'dl_similarity': item['dl_similarity'],
-                'totalUser' : len(item['user_resp']),
-                'totalComparedUser' : len(item['response_other'], )}
-                  for item in sorted(
-                    comparison_matrix,
-                    key=lambda x: x['dl_similarity'],
-                    reverse=True)[:15]]
-                ),
-        'total_collected': len(comparison_matrix)
-    })
+                'totalUser': len(item['user_resp']),
+                'totalComparedUser': len(item['response_other']),
+            }
+            for item in sorted(
+                comparison_matrix,
+                key=lambda x: x['dl_similarity'],
+                reverse=True,
+            )
+        ],
+        'total_collected': len(comparison_matrix),
+    }
+
 
 @damerau_levenshtein.route('/', methods=['GET'])
+@damerau_levenshtein.response(200, RespostaSchema(many=True))
 def get_all_respostas():
-    respostas = RespostasLake.query.all()
-    return jsonify([r.to_dict() for r in respostas])
+    return RespostasLake.query.all()
+
 
 @damerau_levenshtein.route('/no-timestamp', methods=['GET'])
+@damerau_levenshtein.response(200, RespostaSchema(many=True))
 def get_all_respostas_no_timestamp():
-    respostas = RespostasLake.query.all()
-    return jsonify([r.to_dict() for r in respostas])
+    return RespostasLake.query.all()

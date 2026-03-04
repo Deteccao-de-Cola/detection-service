@@ -1,9 +1,11 @@
-from flask import jsonify, Blueprint
+from flask_smorest import Blueprint
 from src.models.respostas_lake import RespostasLake
+from src.schemas import RespostaSchema
 
-respostas = Blueprint("respostas", __name__)
+respostas = Blueprint("respostas", __name__, description="Respostas endpoints")
+
 
 @respostas.route('/', methods=['GET'])
+@respostas.response(200, RespostaSchema(many=True))
 def get_all_respostas():
-    respostas_list = RespostasLake.query.all()
-    return jsonify([r.to_dict() for r in respostas_list])
+    return RespostasLake.query.all()

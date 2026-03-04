@@ -29,6 +29,16 @@ class RespostasLake(db.Model):
         }
 
     @staticmethod
+    def get_salvar_tempo_resposta(exam_id):
+        result = db.session.execute(
+            db.text("SELECT salvarTempoResposta FROM PROVA WHERE idProva = :examId"),
+            {"examId": exam_id}
+        ).fetchone()
+        if result is None:
+            return True
+        return bool(result[0])
+
+    @staticmethod
     def select_users(exam_id=None, sourceId=None):
         users = RespostasLake.query.with_entities(RespostasLake.userId)
 
@@ -39,43 +49,75 @@ class RespostasLake(db.Model):
             users = users.filter(RespostasLake.sourceId == sourceId)
 
         users = users.distinct().order_by(RespostasLake.userId).all()
-        print("USERRRS", exam_id, sourceId)
         return [u[0] for u in users]
 
     @staticmethod
-    def select_user_questions(userId, exam_id=None, sourceId=None):
+    def select_user_questions(userId, exam_id=None, sourceId=None, orderByTimestamp=False, withTimestamp=True):
         data = {"idUser": userId}
 
-        sql = """SELECT id, itemId, respondidaEm, userId, respostaUsuario
-        FROM respostas_lake rl1
-        WHERE userId = :idUser"""
         if exam_id is not None:
             data["examId"] = exam_id
-            sql += """ AND contestId = :examId"""
-
         if sourceId is not None:
             data["sourceId"] = sourceId
-            sql += """ AND sourceId = :sourceId"""
 
-        sql += """
-        AND respondidaEm = (
-            SELECT MAX(respondidaEm)
-            FROM respostas_lake rl2
-            WHERE rl2.itemId = rl1.itemId
-                AND rl2.userId = :idUser"""
-
+        filters = " AND userId = :idUser"
         if exam_id is not None:
-            sql += """ AND rl2.contestId = :examId"""
+            filters += " AND contestId = :examId"
         if sourceId is not None:
-            sql += """ AND rl2.sourceId = :sourceId"""
+            filters += " AND sourceId = :sourceId"
 
-        sql += """)
-        ORDER BY itemId ASC;"""
+        if not withTimestamp:
+            sql = f"""SELECT id, itemId, NULL as respondidaEm, userId, respostaUsuario
+            FROM respostas_lake rl1
+            WHERE userId = :idUser"""
+            if exam_id is not None:
+                sql += """ AND contestId = :examId"""
+            if sourceId is not None:
+                sql += """ AND sourceId = :sourceId"""
+            sql += """
+            AND id = (
+                SELECT MAX(id)
+                FROM respostas_lake rl2
+                WHERE rl2.itemId = rl1.itemId
+                    AND rl2.userId = :idUser"""
+            if exam_id is not None:
+                sql += """ AND rl2.contestId = :examId"""
+            if sourceId is not None:
+                sql += """ AND rl2.sourceId = :sourceId"""
+            sql += """)
+            ORDER BY itemId ASC;"""
+        else:
+            sql = """SELECT id, itemId,
+            IF(YEAR(respondidaEm) = 0, NULL, respondidaEm) as respondidaEm,
+            userId, respostaUsuario
+            FROM respostas_lake rl1
+            WHERE userId = :idUser"""
+            if exam_id is not None:
+                sql += """ AND contestId = :examId"""
+            if sourceId is not None:
+                sql += """ AND sourceId = :sourceId"""
 
-        # print("My Data", sql, data)
+            sql += """
+            AND IF(YEAR(respondidaEm) = 0, NULL, respondidaEm) <=> (
+                SELECT MAX(IF(YEAR(respondidaEm) = 0, NULL, respondidaEm))
+                FROM respostas_lake rl2
+                WHERE rl2.itemId = rl1.itemId
+                    AND rl2.userId = :idUser"""
+            if exam_id is not None:
+                sql += """ AND rl2.contestId = :examId"""
+            if sourceId is not None:
+                sql += """ AND rl2.sourceId = :sourceId"""
+
+            if orderByTimestamp is False:
+                sql += """)
+                ORDER BY itemId ASC;"""
+            if orderByTimestamp is True:
+                sql += """)
+                ORDER BY respondidaEm ASC;"""
+
+        # print(db.text(sql), data)
         result = db.session.execute(db.text(sql), data)
         rows = result.fetchall()
-        # print(rows)
 
         # pylint: disable=protected-access
         return [dict(row._mapping) for row in rows]

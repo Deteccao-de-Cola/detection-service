@@ -1,0 +1,20 @@
+services:
+  api:
+    build:
+      context: .
+      target: builder
+    container_name: detection-service-dev
+    ports:
+      - '8000:8000'
+    volumes:
+      - .:/src
+    networks:
+      - tcc-cola-network
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - FLASK_DEBUG=0
+
+networks:
+  tcc-cola-network:
+    external: true
