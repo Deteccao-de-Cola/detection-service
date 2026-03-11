@@ -14,20 +14,31 @@ class ComparisonService:
 
     # pylint: enable=no-method-argument,redefined-outer-name,reimported,import-outside-toplevel
     @staticmethod
-    def compare(contest, contest_to_be_compared, comparasion_function):
+    def _build_response_dicts(contest, contest_to_be_compared):
         user1_dict = {item['itemId']: item['respostaUsuario'] for item in contest}
         user2_dict = {item['itemId']: item['respostaUsuario'] for item in contest_to_be_compared}
-
         all_items = set(user1_dict.keys()) | set(user2_dict.keys())
+        return user1_dict, user2_dict, all_items
+
+    @staticmethod
+    def compare(contest, contest_to_be_compared, comparasion_function):
+        user1_dict, user2_dict, all_items = ComparisonService._build_response_dicts(contest, contest_to_be_compared)
 
         user1_responses = set()
         user2_responses = set()
         for itemId in all_items:
-            resp1 = user1_dict.get(itemId, None)
-            user1_responses.add((itemId, resp1))
+            user1_responses.add((itemId, user1_dict.get(itemId, None)))
+            user2_responses.add((itemId, user2_dict.get(itemId, None)))
 
-            resp2 = user2_dict.get(itemId, None)
-            user2_responses.add((itemId, resp2))
+        return comparasion_function(user1_responses, user2_responses)
+
+    @staticmethod
+    def compare_sorted(contest, contest_to_be_compared, comparasion_function):
+        user1_dict, user2_dict, all_items = ComparisonService._build_response_dicts(contest, contest_to_be_compared)
+
+        all_items_sorted = sorted(all_items)
+        user1_responses = [(itemId, user1_dict.get(itemId, None)) for itemId in all_items_sorted]
+        user2_responses = [(itemId, user2_dict.get(itemId, None)) for itemId in all_items_sorted]
 
         return comparasion_function(user1_responses, user2_responses)
 
@@ -50,20 +61,23 @@ class ComparisonService:
 
         with_timestamp = RespostasLake.get_salvar_tempo_resposta(exam_id) if exam_id is not None else True
 
-        # print("user_batch", user_batch)
-        # print("all_users", all_users)
+        responses_cache = {}
+        for uid in all_users:
+            responses_cache[uid] = RespostasLake.select_user_questions(uid, exam_id, withTimestamp=with_timestamp)
 
         for user in user_batch:
 
-            current_user_response = RespostasLake.select_user_questions(user, exam_id, withTimestamp=with_timestamp)
-            # current_user_response_by_time = RespostasLake.select_user_questions(user, exam_id, orderByTimestamp=True)
+            current_user_response = responses_cache[user]
+            user_1_avg_time = ComparisonService._calc_avg_interval(current_user_response)
+
             for other_user in all_users:
                 if other_user == user:
                     continue
 
-                respostas_other_user = RespostasLake.select_user_questions(other_user, exam_id, withTimestamp=with_timestamp)
-                # respostas_other_user_by_time = RespostasLake.select_user_questions(other_user, exam_id, orderByTimestamp=True)
-                print("The users", user, other_user)
+                if other_user < user: #skips half of the users [\]
+                    continue
+
+                respostas_other_user = responses_cache[other_user]
                 jaccard_result = None
                 dl_result = None
                 # {item['itemId']: item['respostaUsuario'] for item in contest}
@@ -75,10 +89,15 @@ class ComparisonService:
                                                                 respostas_other_user,
                                                                 JaccardService.jaccard_index)
 
-                # if metrics in ['dl', 'both']:
-                #     dl_result = ComparisonService.compare_by_timestamp(current_user_response_by_time,
-                #                                             respostas_other_user_by_time,
-                #                                             DamerauLevenshteinService.damerau_levenshtein_similarity_any_swap)  # pylint: disable=line-too-long
+                if metrics in ['dl', 'both']:
+                    if with_timestamp:
+                        dl_result = ComparisonService.compare_by_timestamp(current_user_response,
+                                                                respostas_other_user,
+                                                                DamerauLevenshteinService.damerau_levenshtein_similarity_any_swap)  # pylint: disable=line-too-long
+                    else:
+                        dl_result = ComparisonService.compare_sorted(current_user_response,
+                                                                respostas_other_user,
+                                                                DamerauLevenshteinService.damerau_levenshtein_similarity_any_swap)  # pylint: disable=line-too-long
                 # should_append = False
                 # if metrics == 'jaccard' and jaccard_result and jaccard_result > 0.01:
                 #     should_append = True
@@ -95,8 +114,7 @@ class ComparisonService:
                     'user_resp': current_user_response,
                     'time_result_diff': ComparisonService._calc_time_diff(
                         current_user_response, respostas_other_user),
-                    'user_1_avarage_time': ComparisonService._calc_avg_interval(
-                        current_user_response),
+                    'user_1_avarage_time': user_1_avg_time,
                     'user_2_avarage_time': ComparisonService._calc_avg_interval(
                         respostas_other_user),
                 }
@@ -104,7 +122,7 @@ class ComparisonService:
                 if jaccard_result is not None:
                     result['jaccard_index'] = jaccard_result
                 if dl_result is not None:
-                    result['dl_similarity'] = dl_result
+                    result['dl_similarity'], result['dl_operations'] = dl_result
 
                 batch_results.append(result)
 
