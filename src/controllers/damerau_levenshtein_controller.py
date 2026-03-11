@@ -47,6 +47,7 @@ def compare_with_damerau_levenshtein(query_args):
                 'user': item['user'],
                 'compared_with': item['compared_with'],
                 'dl_similarity': item['dl_similarity'],
+                'dl_operations': item['dl_operations'],
                 'totalUser': len(item['user_resp']),
                 'totalComparedUser': len(item['response_other']),
             }

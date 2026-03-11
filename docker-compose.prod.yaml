@@ -2,20 +2,17 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile.dev
-    image: dougfarias/detection-service:dev
+      dockerfile: Dockerfile.prod
+    image: dougfarias/detection-service:latest
     container_name: detection-service
     ports:
       - '8000:8000'
-    volumes:
-      - .:/src
     networks:
       - tcc-cola-network
     environment:
-      - FLASK_APP=app.py
-      - FLASK_ENV=development
+      - FLASK_APP=src:app
+      - FLASK_ENV=production
     restart: always
-
 
 networks:
   tcc-cola-network:

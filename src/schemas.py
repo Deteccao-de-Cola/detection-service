@@ -56,6 +56,7 @@ class DLComparisonItemSchema(ma.Schema):
     user = ma.fields.Raw()
     compared_with = ma.fields.Raw()
     dl_similarity = ma.fields.Float(allow_none=True)
+    dl_operations = ma.fields.Int(allow_none=True)
     totalUser = ma.fields.Int()
     totalComparedUser = ma.fields.Int()
 
@@ -65,6 +66,7 @@ class ComparisonItemSchema(ma.Schema):
     compared_with = ma.fields.Raw()
     jaccard_index = ma.fields.Float(allow_none=True)
     dl_similarity = ma.fields.Float(allow_none=True)
+    dl_operations = ma.fields.Int(allow_none=True)
     totalUser = ma.fields.Int()
     totalComparedUser = ma.fields.Int()
     time_result_diff = ma.fields.Float(allow_none=True)

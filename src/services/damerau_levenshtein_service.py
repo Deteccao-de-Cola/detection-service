@@ -109,9 +109,12 @@ class DamerauLevenshteinService:
                     d[i][j] + cost,        # substituição / match
                     d[i + 1][j] + 1,       # inserção
                     d[i][j + 1] + 1,       # deleção
-                    # d[i1][j1] + (i - i1 - 1) + 1 + (j - j1 - 1),  # DL padrão (com penalidade de gap)
+                    # d[i-1][j-1] + cost
                     d[i1][j1] + 1,         # qualquer transposição = custo 1
                 )
+
+                # if i > 1 and j > 1 and s1[i-1] == s2[j-2] and s1[i-2] == s2[j-1]:
+                #     d[i][j] = min(d[i][j], d[i-2][j-2] + 1)
 
             last_row_id[list1[i - 1]] = i
 
@@ -123,6 +126,5 @@ class DamerauLevenshteinService:
         max_len = max(len(seq1), len(seq2))
 
         if max_len == 0:
-            return 1.0
-
-        return 1 - (distance / max_len)
+            return 1.0, 0
+        return 1 - (distance / max_len), distance

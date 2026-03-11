@@ -52,7 +52,7 @@ class RespostasLake(db.Model):
         return [u[0] for u in users]
 
     @staticmethod
-    def select_user_questions(userId, exam_id=None, sourceId=None, orderByTimestamp=False, withTimestamp=True):
+    def select_user_questions(userId, exam_id=None, sourceId=None,  withTimestamp=True):
         data = {"idUser": userId}
 
         if exam_id is not None:
@@ -108,10 +108,10 @@ class RespostasLake(db.Model):
             if sourceId is not None:
                 sql += """ AND rl2.sourceId = :sourceId"""
 
-            if orderByTimestamp is False:
+            if withTimestamp is False:
                 sql += """)
                 ORDER BY itemId ASC;"""
-            if orderByTimestamp is True:
+            if withTimestamp is True:
                 sql += """)
                 ORDER BY respondidaEm ASC;"""
 
