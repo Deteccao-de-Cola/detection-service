@@ -13,5 +13,4 @@ dist/
 build/
 *.egg-info/
 
-/kmeans_preprocessing/data
 /kmeans_preprocessing/data_anonymized
