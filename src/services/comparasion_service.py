@@ -2,6 +2,7 @@ from datetime import datetime
 from src.models.respostas_lake import RespostasLake
 from src.services.damerau_levenshtein_service import DamerauLevenshteinService
 from src.services.jaccard_service import JaccardService
+from src.services.kmeans_levenshtein_service import KMeansLevenshteinService
 
 
 class ComparisonService:
@@ -55,15 +56,28 @@ class ComparisonService:
         return comparasion_function(user1_responses, user2_responses)
 
     @staticmethod
-    def process_user_batch(user_batch, all_users, exam_id=None, metrics='both'):
+    def compute_kmeans_clusters(all_users, exam_id, k=2, max_iter=10, responses_cache=None, with_timestamp=None):
+        if with_timestamp is None:
+            with_timestamp = RespostasLake.get_salvar_tempo_resposta(exam_id) if exam_id is not None else True
+        if responses_cache is None:
+            responses_cache = {
+                uid: RespostasLake.select_user_questions(uid, exam_id, withTimestamp=with_timestamp)
+                for uid in all_users
+            }
+        return KMeansLevenshteinService.kmeans_hamming(responses_cache, k=k, max_iter=max_iter)
+
+    @staticmethod
+    def process_user_batch(user_batch, all_users, exam_id=None, responses_cache=None, with_timestamp=None):
 
         batch_results = []
 
-        with_timestamp = RespostasLake.get_salvar_tempo_resposta(exam_id) if exam_id is not None else True
+        if with_timestamp is None:
+            with_timestamp = RespostasLake.get_salvar_tempo_resposta(exam_id) if exam_id is not None else True
 
-        responses_cache = {}
-        for uid in all_users:
-            responses_cache[uid] = RespostasLake.select_user_questions(uid, exam_id, withTimestamp=with_timestamp)
+        if responses_cache is None:
+            responses_cache = {}
+            for uid in all_users:
+                responses_cache[uid] = RespostasLake.select_user_questions(uid, exam_id, withTimestamp=with_timestamp)
 
         for user in user_batch:
 
@@ -74,39 +88,31 @@ class ComparisonService:
                 if other_user == user:
                     continue
 
-                if other_user < user: #skips half of the users [\]
+                elif other_user < user:  # skips half of the pairs to avoid duplicates
                     continue
 
                 respostas_other_user = responses_cache[other_user]
-                jaccard_result = None
-                dl_result = None
-                # {item['itemId']: item['respostaUsuario'] for item in contest}
-                # print(other_user,  user)
 
-                if metrics in ['jaccard', 'both']:
-                    # print(current_user_response, respostas_other_user)
-                    jaccard_result = ComparisonService.compare(current_user_response,
-                                                                respostas_other_user,
-                                                                JaccardService.jaccard_index)
+                if not abs(len(current_user_response) - len(respostas_other_user)) <= 2:  # pylint: disable=line-too-long
+                    continue
 
-                if metrics in ['dl', 'both']:
-                    if with_timestamp:
-                        dl_result = ComparisonService.compare_by_timestamp(current_user_response,
-                                                                respostas_other_user,
-                                                                DamerauLevenshteinService.damerau_levenshtein_similarity_any_swap)  # pylint: disable=line-too-long
-                    else:
-                        dl_result = ComparisonService.compare_sorted(current_user_response,
-                                                                respostas_other_user,
-                                                                DamerauLevenshteinService.damerau_levenshtein_similarity_any_swap)  # pylint: disable=line-too-long
-                # should_append = False
-                # if metrics == 'jaccard' and jaccard_result and jaccard_result > 0.01:
-                #     should_append = True
-                # elif metrics == 'dl' and dl_result and dl_result > 0.01:
-                #     should_append = True
-                # elif metrics == 'both' and jaccard_result and jaccard_result > 0.01:
-                #     should_append = True
+                jaccard_result = ComparisonService.compare(current_user_response,
+                                                           respostas_other_user,
+                                                           JaccardService.jaccard_index)
 
-                # if should_append:
+                lev_result = ComparisonService.compare(current_user_response,
+                                                       respostas_other_user,
+                                                       KMeansLevenshteinService.hamming_similarity)
+
+                if with_timestamp:
+                    dl_result = ComparisonService.compare_by_timestamp(current_user_response,
+                                                            respostas_other_user,
+                                                            DamerauLevenshteinService.damerau_levenshtein_similarity_any_swap)  # pylint: disable=line-too-long
+                else:
+                    dl_result = ComparisonService.compare_sorted(current_user_response,
+                                                            respostas_other_user,
+                                                            DamerauLevenshteinService.damerau_levenshtein_similarity_any_swap)  # pylint: disable=line-too-long
+
                 result = {
                     'user': user,
                     'compared_with': other_user,
@@ -119,10 +125,9 @@ class ComparisonService:
                         respostas_other_user),
                 }
 
-                if jaccard_result is not None:
-                    result['jaccard_index'] = jaccard_result
-                if dl_result is not None:
-                    result['dl_similarity'], result['dl_operations'] = dl_result
+                result['jaccard_index'] = jaccard_result
+                result['dl_similarity'], result['dl_operations'] = dl_result
+                result['lev_similarity'] = lev_result
 
                 batch_results.append(result)
 

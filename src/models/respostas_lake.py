@@ -29,6 +29,33 @@ class RespostasLake(db.Model):
         }
 
     @staticmethod
+    def get_user_exam_metadata(exam_id):
+        """Retorna {userId: [{tipoProva, dataHoraFim}]} para o examId (idProva)."""
+        rows = db.session.execute(
+            db.text("""
+                SELECT u.id AS userId,
+                       ap.tipo AS tipoProva,
+                       rp.dataHoraFim
+                FROM users u
+                JOIN realiza_prova rp ON u.cpf = rp.cpf
+                JOIN APLICACAO_PROVA ap ON rp.idAplicacao = ap.idAplicacao
+                WHERE ap.idProva = :examId
+            """),
+            {"examId": exam_id}
+        ).fetchall()
+
+        metadata = {}
+        for row in rows:
+            uid = row.userId
+            if uid not in metadata:
+                metadata[uid] = []
+            metadata[uid].append({
+                'tipoProva': row.tipoProva,
+                'dataHoraFim': row.dataHoraFim.isoformat() if row.dataHoraFim else None,
+            })
+        return metadata
+
+    @staticmethod
     def get_salvar_tempo_resposta(exam_id):
         result = db.session.execute(
             db.text("SELECT salvarTempoResposta FROM PROVA WHERE idProva = :examId"),

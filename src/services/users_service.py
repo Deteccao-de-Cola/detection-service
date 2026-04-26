@@ -6,15 +6,19 @@ class UsersService:
         if len(users) == 0:
             return users
 
-        batch_size = max(1, len(users) // num_processes)
+        sorted_users = sorted(users)
 
-        if len(users) % num_processes != 0:
-            batch_size += 1
-
+        # Start with one empty list for each process.
         batches = []
-        total = 0
-        for i in range(0, len(users), batch_size):
-            batches.append(users[i:i + batch_size])
-            total+=batch_size
+        for _ in range(num_processes):
+            batches.append([])
+
+        # Distribute users in round-robin order.
+        # This guarantees each batch gets an equal mix of heavy and light users.
+        i = 0
+        for user in sorted_users:
+            target_batch = i % num_processes
+            batches[target_batch].append(user)
+            i += 1
 
         return batches

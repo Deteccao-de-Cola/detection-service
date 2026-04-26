@@ -37,11 +37,6 @@ class CompareWithMetricQuerySchema(ma.Schema):
         load_default=None,
         metadata={"description": "Source ID to filter by"}
     )
-    metric = ma.fields.Str(
-        load_default='both',
-        validate=validate.OneOf(['jaccard', 'dl', 'both']),
-        metadata={"description": "Similarity metric: 'jaccard', 'dl', or 'both'"}
-    )
 
 
 class JaccardComparisonItemSchema(ma.Schema):
@@ -61,17 +56,25 @@ class DLComparisonItemSchema(ma.Schema):
     totalComparedUser = ma.fields.Int()
 
 
+class AplicacaoMetadataSchema(ma.Schema):
+    tipoProva = ma.fields.Str(allow_none=True)
+    dataHoraFim = ma.fields.Str(allow_none=True)
+
+
 class ComparisonItemSchema(ma.Schema):
     user = ma.fields.Raw()
     compared_with = ma.fields.Raw()
     jaccard_index = ma.fields.Float(allow_none=True)
     dl_similarity = ma.fields.Float(allow_none=True)
     dl_operations = ma.fields.Int(allow_none=True)
+    lev_similarity = ma.fields.Float(allow_none=True)
     totalUser = ma.fields.Int()
     totalComparedUser = ma.fields.Int()
     time_result_diff = ma.fields.Float(allow_none=True)
     user_1_avarage_time = ma.fields.Float(allow_none=True)
     user_2_avarage_time = ma.fields.Float(allow_none=True)
+    user_aplicacoes = ma.fields.List(ma.fields.Nested(AplicacaoMetadataSchema), load_default=[])
+    compared_aplicacoes = ma.fields.List(ma.fields.Nested(AplicacaoMetadataSchema), load_default=[])
 
 
 class JaccardComparisonResponseSchema(ma.Schema):
@@ -86,7 +89,6 @@ class DLComparisonResponseSchema(ma.Schema):
 
 class QuestionInfoSchema(ma.Schema):
     idQuestao = ma.fields.Int()
-    opcaoCorreta = ma.fields.Int(allow_none=True)
     nome = ma.fields.Str(allow_none=True)
     descricao = ma.fields.Str(allow_none=True)
     dificuldade = ma.fields.Str(allow_none=True)
@@ -100,3 +102,9 @@ class ComparisonResponseSchema(ma.Schema):
     comparison_matrix = ma.fields.List(ma.fields.Nested(ComparisonItemSchema))
     total_collected = ma.fields.Int()
     contest_info = ma.fields.List(ma.fields.Nested(QuestionInfoSchema))
+    heatmap_image = ma.fields.Str(allow_none=True)
+    scatter_delivery_jaccard = ma.fields.List(ma.fields.Dict(), load_default=[])
+    avg_delivery_all_pairs = ma.fields.Float(load_default=0)
+    delivery_by_jaccard_range = ma.fields.List(ma.fields.Dict(), load_default=[])
+    suspicion_table = ma.fields.List(ma.fields.Dict(), load_default=[])
+    delivery_vs_avg = ma.fields.List(ma.fields.Dict(), load_default=[])

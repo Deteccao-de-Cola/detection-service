@@ -5,7 +5,7 @@ class QuestionLevelService:
     @staticmethod
     def recalculate_questions_level(contest_id):
         questoes_sql = db.text("""
-            SELECT q.idQuestao, q.opcaoCorreta, q.nome, q.descricao, q.dificuldade
+            SELECT q.idQuestao, q.nome, q.descricao, q.dificuldade
             FROM QUESTAO q
             JOIN contem c ON q.idQuestao = c.idQuestao
             WHERE c.idProva = :contestId
@@ -14,9 +14,10 @@ class QuestionLevelService:
         questoes = [dict(row._mapping) for row in questoes_result.fetchall()]
 
         total_alunos_sql = db.text("""
-            SELECT COUNT(DISTINCT cpf) as total
-            FROM RESPONDE
-            WHERE idProva = :contestId
+            SELECT COUNT(DISTINCT r.cpf) as total
+            FROM RESPONDE r
+            JOIN APLICACAO_PROVA ap ON r.idAplicacao = ap.idAplicacao
+            WHERE ap.idProva = :contestId
         """)
         total_alunos = db.session.execute(total_alunos_sql, {"contestId": contest_id}).fetchone()[0] or 0
 
@@ -24,16 +25,17 @@ class QuestionLevelService:
             questao_id = questao['idQuestao']
 
             todas = db.session.execute(db.text("""
-                SELECT COUNT(*) FROM RESPONDE
-                WHERE idProva = :contestId AND idQuestao = :questaoId
+                SELECT COUNT(*) FROM RESPONDE r
+                JOIN APLICACAO_PROVA ap ON r.idAplicacao = ap.idAplicacao
+                WHERE ap.idProva = :contestId AND r.idQuestao = :questaoId
             """), {"contestId": contest_id, "questaoId": questao_id}).fetchone()[0] or 0
 
             corretas = db.session.execute(db.text("""
-                SELECT COUNT(*) FROM QUESTAO q
-                JOIN RESPONDE r ON q.idQuestao = r.idQuestao
+                SELECT COUNT(*) FROM RESPONDE r
+                JOIN APLICACAO_PROVA ap ON r.idAplicacao = ap.idAplicacao
+                JOIN ALTERNATIVA a ON r.resposta = a.idAlternativa AND a.alternativaCorreta = 1
                 WHERE r.idQuestao = :questaoId
-                  AND r.idProva = :contestId
-                  AND q.opcaoCorreta = r.resposta
+                  AND ap.idProva = :contestId
             """), {"contestId": contest_id, "questaoId": questao_id}).fetchone()[0] or 0
 
             erradas = todas - corretas
