@@ -2,8 +2,7 @@ from datetime import datetime
 from src.models.respostas_lake import RespostasLake
 from src.services.damerau_levenshtein_service import DamerauLevenshteinService
 from src.services.jaccard_service import JaccardService
-from src.services.kmeans_levenshtein_service import KMeansLevenshteinService
-
+from src.services.hamming_service import HammingService
 
 class ComparisonService:
     # pylint: disable=no-method-argument,redefined-outer-name,reimported,import-outside-toplevel
@@ -64,7 +63,7 @@ class ComparisonService:
                 uid: RespostasLake.select_user_questions(uid, exam_id, withTimestamp=with_timestamp)
                 for uid in all_users
             }
-        return KMeansLevenshteinService.kmeans_hamming(responses_cache, k=k, max_iter=max_iter)
+        return HammingService.kmeans_hamming(responses_cache, k=k, max_iter=max_iter)
 
     @staticmethod
     def process_user_batch(user_batch, all_users, exam_id=None, responses_cache=None, with_timestamp=None):
@@ -100,9 +99,9 @@ class ComparisonService:
                                                            respostas_other_user,
                                                            JaccardService.jaccard_index)
 
-                lev_result = ComparisonService.compare(current_user_response,
-                                                       respostas_other_user,
-                                                       KMeansLevenshteinService.hamming_similarity)
+                hamming_result = ComparisonService.compare(current_user_response,
+                                                          respostas_other_user,
+                                                          HammingService.hamming_similarity)
 
                 if with_timestamp:
                     dl_result = ComparisonService.compare_by_timestamp(current_user_response,
@@ -127,7 +126,7 @@ class ComparisonService:
 
                 result['jaccard_index'] = jaccard_result
                 result['dl_similarity'], result['dl_operations'] = dl_result
-                result['lev_similarity'] = lev_result
+                result['hamming_similarity'] = hamming_result
 
                 batch_results.append(result)
 

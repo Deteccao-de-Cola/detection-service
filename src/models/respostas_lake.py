@@ -12,34 +12,36 @@ class RespostasLake(db.Model):
     itemId = db.Column(db.Integer, nullable=False)
     respostaUsuario = db.Column(db.String(255), nullable=True)
     userId = db.Column(db.Integer, nullable=False)
+    tipoProva           = db.Column(db.String(10), nullable=True)
+    dataHoraFim         = db.Column(db.DateTime, nullable=True)
+    salvarTempoResposta = db.Column(db.Boolean, nullable=True)
+
 
     def __repr__(self):
-        return f'<RespostasLake {self.id} - {self.tipo_acao}>'
+        return f'<RespostasLake {self.id}>'
 
     def to_dict(self):
         return {
             'id': self.id,
+            'sourceId': self.sourceId,
+            'contestId': self.contestId,
             'respondidaEm': self.respondidaEm.isoformat() if self.respondidaEm else None,
-            'tipo_acao': self.tipo_acao,
             'itemId': self.itemId,
-            'fonte': self.fonte,
             'respostaUsuario': self.respostaUsuario,
-            'plataforma': self.plataforma,
-            'userId': self.userId
+            'userId': self.userId,
+            'tipoProva': self.tipoProva,
+            'dataHoraFim': self.dataHoraFim.isoformat() if self.dataHoraFim else None,
+            'salvarTempoResposta': self.salvarTempoResposta,
         }
 
     @staticmethod
     def get_user_exam_metadata(exam_id):
-        """Retorna {userId: [{tipoProva, dataHoraFim}]} para o examId (idProva)."""
+        """Retorna {userId: [{tipoProva, dataHoraFim}]} para o examId."""
         rows = db.session.execute(
             db.text("""
-                SELECT u.id AS userId,
-                       ap.tipo AS tipoProva,
-                       rp.dataHoraFim
-                FROM users u
-                JOIN realiza_prova rp ON u.cpf = rp.cpf
-                JOIN APLICACAO_PROVA ap ON rp.idAplicacao = ap.idAplicacao
-                WHERE ap.idProva = :examId
+                SELECT DISTINCT userId, tipoProva, dataHoraFim
+                FROM respostas_lake
+                WHERE contestId = :examId
             """),
             {"examId": exam_id}
         ).fetchall()
@@ -58,7 +60,7 @@ class RespostasLake(db.Model):
     @staticmethod
     def get_salvar_tempo_resposta(exam_id):
         result = db.session.execute(
-            db.text("SELECT salvarTempoResposta FROM PROVA WHERE idProva = :examId"),
+            db.text("SELECT salvarTempoResposta FROM respostas_lake WHERE contestId = :examId AND salvarTempoResposta IS NOT NULL LIMIT 1"),
             {"examId": exam_id}
         ).fetchone()
         if result is None:

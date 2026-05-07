@@ -67,7 +67,7 @@ class ComparisonItemSchema(ma.Schema):
     jaccard_index = ma.fields.Float(allow_none=True)
     dl_similarity = ma.fields.Float(allow_none=True)
     dl_operations = ma.fields.Int(allow_none=True)
-    lev_similarity = ma.fields.Float(allow_none=True)
+    hamming_similarity = ma.fields.Float(allow_none=True)
     totalUser = ma.fields.Int()
     totalComparedUser = ma.fields.Int()
     time_result_diff = ma.fields.Float(allow_none=True)

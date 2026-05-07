@@ -71,7 +71,7 @@ def compare_similarity(query_args):
         {
             'user': item['user'],
             'compared_with': item['compared_with'],
-            'lev_similarity': item.get('lev_similarity'),
+            'hamming_similarity': item.get('hamming_similarity'),
             'jaccard_index': item.get('jaccard_index'),
             'dl_similarity': item.get('dl_similarity'),
             'dl_operations': item.get('dl_operations'),
