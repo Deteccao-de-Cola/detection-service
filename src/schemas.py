@@ -98,6 +98,11 @@ class QuestionInfoSchema(ma.Schema):
     percentualAcerto = ma.fields.Float()
 
 
+class ImportacaoResponseSchema(ma.Schema):
+    linhas_importadas = ma.fields.Int()
+    mensagem = ma.fields.Str()
+
+
 class ComparisonResponseSchema(ma.Schema):
     comparison_matrix = ma.fields.List(ma.fields.Nested(ComparisonItemSchema))
     total_collected = ma.fields.Int()
