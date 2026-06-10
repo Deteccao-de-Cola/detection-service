@@ -15,3 +15,5 @@ build/
 
 /kmeans_preprocessing/data
 /kmeans_preprocessing/data_anonymized
+
+.idea/
