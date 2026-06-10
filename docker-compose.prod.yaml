@@ -7,12 +7,19 @@ services:
     container_name: detection-service
     ports:
       - '8000:8000'
+    volumes:
+      - heatmaps:/src/src/public
     networks:
       - tcc-cola-network
     environment:
       - FLASK_APP=src:app
       - FLASK_ENV=production
     restart: always
+
+volumes:
+  heatmaps:
+    driver: local
+
 
 networks:
   tcc-cola-network:
