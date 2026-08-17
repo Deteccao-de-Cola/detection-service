@@ -14,7 +14,6 @@ class RespostasLake(db.Model):
     userId = db.Column(db.Integer, nullable=False)
     tipoProva           = db.Column(db.String(10), nullable=True)
     dataHoraFim         = db.Column(db.DateTime, nullable=True)
-    salvarTempoResposta = db.Column(db.Boolean, nullable=True)
 
 
     def __repr__(self):
@@ -31,7 +30,6 @@ class RespostasLake(db.Model):
             'userId': self.userId,
             'tipoProva': self.tipoProva,
             'dataHoraFim': self.dataHoraFim.isoformat() if self.dataHoraFim else None,
-            'salvarTempoResposta': self.salvarTempoResposta,
         }
 
     @staticmethod
@@ -60,12 +58,15 @@ class RespostasLake(db.Model):
     @staticmethod
     def get_salvar_tempo_resposta(exam_id):
         result = db.session.execute(
-            db.text("SELECT salvarTempoResposta FROM respostas_lake WHERE contestId = :examId AND salvarTempoResposta IS NOT NULL LIMIT 1"),
+            db.text("""
+                SELECT 1 FROM respostas_lake
+                WHERE contestId = :examId
+                  AND YEAR(respondidaEm) != 0
+                LIMIT 1
+            """),
             {"examId": exam_id}
         ).fetchone()
-        if result is None:
-            return True
-        return bool(result[0])
+        return result is not None
 
     @staticmethod
     def select_users(exam_id=None, sourceId=None):
@@ -78,7 +79,27 @@ class RespostasLake(db.Model):
             users = users.filter(RespostasLake.sourceId == sourceId)
 
         users = users.distinct().order_by(RespostasLake.userId).all()
-        return [u[0] for u in users]
+        user_ids = [u[0] for u in users]
+
+        if exam_id is None or not user_ids:
+            return user_ids
+
+        completos_sql = """
+            SELECT u.id AS userId
+            FROM realiza_prova AS rp
+            INNER JOIN APLICACAO_PROVA AS ap ON ap.idAplicacao = rp.idAplicacao
+            INNER JOIN users AS u ON u.cpf = rp.cpf
+            WHERE ap.idProva = :examId
+              AND rp.dataHoraFim IS NOT NULL
+            GROUP BY u.id
+            HAVING COUNT(DISTINCT ap.idAplicacao) = (
+                SELECT COUNT(*) FROM APLICACAO_PROVA WHERE idProva = :examId
+            )
+        """
+        completos_rows = db.session.execute(db.text(completos_sql), {"examId": exam_id}).fetchall()
+        completos_ids = {row.userId for row in completos_rows}
+
+        return [uid for uid in user_ids if uid in completos_ids]
 
     @staticmethod
     def select_user_questions(userId, exam_id=None, sourceId=None,  withTimestamp=True):
