@@ -103,6 +103,87 @@ class ImportacaoResponseSchema(ma.Schema):
     mensagem = ma.fields.Str()
 
 
+class EntregaJaccardQuerySchema(ma.Schema):
+    force = ma.fields.Bool(
+        load_default=False,
+        metadata={"description": "Força o recálculo, ignorando o cache em disco"}
+    )
+
+
+class FaixaEntregaJaccardSchema(ma.Schema):
+    faixaTempo = ma.fields.Str()
+    limiar = ma.fields.Float()
+    totalPares = ma.fields.Int()
+    paresAcimaDoLimiar = ma.fields.Int()
+    percentual = ma.fields.Float()
+
+
+class DiagnosticoEntregaJaccardSchema(ma.Schema):
+    provasProcessadas = ma.fields.Int()
+    alunosConsiderados = ma.fields.Int()
+    totalPares = ma.fields.Int()
+    descartadosDiffQuestoes = ma.fields.Int()
+    descartadosSemAreaCasada = ma.fields.Int()
+    paresPorFaixa = ma.fields.Dict()
+    paresAcimaDoLimiarGeral = ma.fields.Dict()
+
+
+class SerieEntregaJaccardSchema(ma.Schema):
+    limiar = ma.fields.Float()
+    label = ma.fields.Str()
+    acimaDoLimiar = ma.fields.List(ma.fields.Int())
+    percentuais = ma.fields.List(ma.fields.Float())
+    taxaGeral = ma.fields.Float()
+    totalAcimaDoLimiarGeral = ma.fields.Int()
+
+
+class EntregaJaccardResponseSchema(ma.Schema):
+    faixasTempo = ma.fields.List(ma.fields.Str())
+    totaisPorFaixa = ma.fields.List(ma.fields.Int())
+    series = ma.fields.List(ma.fields.Nested(SerieEntregaJaccardSchema))
+    tabela = ma.fields.List(ma.fields.Nested(FaixaEntregaJaccardSchema))
+    diagnostico = ma.fields.Nested(DiagnosticoEntregaJaccardSchema)
+    calculadoEm = ma.fields.Str()
+
+
+class PermutacaoQuerySchema(ma.Schema):
+    force = ma.fields.Bool(
+        load_default=False,
+        metadata={"description": "Força o recálculo, ignorando o cache em disco"}
+    )
+    permutacoes = ma.fields.Int(
+        load_default=2000,
+        metadata={"description": "Número de permutações a rodar"}
+    )
+
+
+class ObservadoPermutacaoSchema(ma.Schema):
+    totalPares = ma.fields.Int()
+    acimaDoLimiar = ma.fields.Int()
+    taxa = ma.fields.Float(allow_none=True)
+
+
+class NuloPermutacaoSchema(ma.Schema):
+    mediaTaxa = ma.fields.Float(allow_none=True)
+    desvioPadraoTaxa = ma.fields.Float(allow_none=True)
+    permutacoesValidas = ma.fields.Int()
+
+
+class ResultadoPermutacaoSchema(ma.Schema):
+    faixaTempo = ma.fields.Str()
+    limiar = ma.fields.Float()
+    observado = ma.fields.Nested(ObservadoPermutacaoSchema)
+    nulo = ma.fields.Nested(NuloPermutacaoSchema)
+    pValor = ma.fields.Float(allow_none=True)
+
+
+class PermutacaoResponseSchema(ma.Schema):
+    permutacoes = ma.fields.Int()
+    semente = ma.fields.Int()
+    resultados = ma.fields.List(ma.fields.Nested(ResultadoPermutacaoSchema))
+    calculadoEm = ma.fields.Str()
+
+
 class ComparisonResponseSchema(ma.Schema):
     comparison_matrix = ma.fields.List(ma.fields.Nested(ComparisonItemSchema))
     total_collected = ma.fields.Int()
