@@ -110,6 +110,5 @@ class ComparisonResponseSchema(ma.Schema):
     heatmap_image = ma.fields.Str(allow_none=True)
     scatter_delivery_jaccard = ma.fields.List(ma.fields.Dict(), load_default=[])
     avg_delivery_all_pairs = ma.fields.Float(load_default=0)
-    delivery_by_jaccard_range = ma.fields.List(ma.fields.Dict(), load_default=[])
     suspicion_table = ma.fields.List(ma.fields.Dict(), load_default=[])
     delivery_vs_avg = ma.fields.List(ma.fields.Dict(), load_default=[])
