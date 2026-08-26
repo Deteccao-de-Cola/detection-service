@@ -68,6 +68,7 @@ class ComparisonItemSchema(ma.Schema):
     dl_similarity = ma.fields.Float(allow_none=True)
     dl_operations = ma.fields.Int(allow_none=True)
     hamming_similarity = ma.fields.Float(allow_none=True)
+    hamming_distance = ma.fields.Int(allow_none=True)
     totalUser = ma.fields.Int()
     totalComparedUser = ma.fields.Int()
     time_result_diff = ma.fields.Float(allow_none=True)
@@ -103,6 +104,16 @@ class ImportacaoResponseSchema(ma.Schema):
     mensagem = ma.fields.Str()
 
 
+class KmeansClusterAssignmentSchema(ma.Schema):
+    user = ma.fields.Raw()
+    cluster = ma.fields.Int()
+
+
+class KmeansClusterStatsSchema(ma.Schema):
+    size = ma.fields.Int()
+    avg_intra_distance = ma.fields.Float()
+
+
 class ComparisonResponseSchema(ma.Schema):
     comparison_matrix = ma.fields.List(ma.fields.Nested(ComparisonItemSchema))
     total_collected = ma.fields.Int()
@@ -112,3 +123,8 @@ class ComparisonResponseSchema(ma.Schema):
     avg_delivery_all_pairs = ma.fields.Float(load_default=0)
     suspicion_table = ma.fields.List(ma.fields.Dict(), load_default=[])
     delivery_vs_avg = ma.fields.List(ma.fields.Dict(), load_default=[])
+    kmeans_clusters = ma.fields.List(ma.fields.Nested(KmeansClusterAssignmentSchema), load_default=[])
+    kmeans_cluster_stats = ma.fields.Dict(
+        keys=ma.fields.Str(), values=ma.fields.Nested(KmeansClusterStatsSchema), load_default={}
+    )
+    kmeans_chart_image = ma.fields.Str(allow_none=True)

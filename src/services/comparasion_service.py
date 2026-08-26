@@ -126,7 +126,7 @@ class ComparisonService:
 
                 result['jaccard_index'] = jaccard_result
                 result['dl_similarity'], result['dl_operations'] = dl_result
-                result['hamming_similarity'] = hamming_result
+                result['hamming_similarity'], result['hamming_distance'] = hamming_result
 
                 batch_results.append(result)
 

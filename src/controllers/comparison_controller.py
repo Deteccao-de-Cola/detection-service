@@ -10,6 +10,7 @@ from src.services.comparasion_service import ComparisonService
 from src.services.question_level_service import QuestionLevelService
 from src.services.heatmap_service import HeatmapService
 from src.services.analytics_service import AnalyticsService
+from src.services.kmeans_chart_service import KmeansChartService
 from src.schemas import (
     CompareWithMetricQuerySchema,
     ComparisonResponseSchema,
@@ -72,6 +73,7 @@ def compare_similarity(query_args):
             'user': item['user'],
             'compared_with': item['compared_with'],
             'hamming_similarity': item.get('hamming_similarity'),
+            'hamming_distance': item.get('hamming_distance'),
             'jaccard_index': item.get('jaccard_index'),
             'dl_similarity': item.get('dl_similarity'),
             'dl_operations': item.get('dl_operations'),
@@ -91,11 +93,32 @@ def compare_similarity(query_args):
     ])
 
     
-    heatmap_image = HeatmapService.generate_jaccard_heatmap(comparison_matrix, exam_id, top_n=25)
+    heatmap_image = HeatmapService.generate_jaccard_heatmap(comparison_matrix, exam_id, top_n=10)
     response_data['heatmap_image'] = heatmap_image
 
     analytics = AnalyticsService.compute_chart_data(response_data['comparison_matrix'])
     response_data.update(analytics)
+
+    student_clusters = ComparisonService.compute_kmeans_clusters(
+        users, exam_id, k=2, responses_cache=responses_cache, with_timestamp=with_timestamp
+    )
+    sequences_by_user = {
+        uid: [item['respostaUsuario'] for item in sorted(responses_cache[uid], key=lambda x: x['itemId'])]
+        for uid in users
+    }
+    kmeans_cluster_stats = KmeansChartService.compute_cluster_stats(student_clusters, sequences_by_user)
+
+    response_data['kmeans_clusters'] = [
+        {'user': uid, 'cluster': cluster_id}
+        for uid, cluster_id in student_clusters.items()
+    ]
+    response_data['kmeans_cluster_stats'] = {
+        str(cluster_id): stats
+        for cluster_id, stats in kmeans_cluster_stats.items()
+    }
+    response_data['kmeans_chart_image'] = KmeansChartService.generate_cluster_distribution_chart(
+        kmeans_cluster_stats, exam_id
+    )
 
     # pylint: enable=no-value-for-parameter
     return response_data

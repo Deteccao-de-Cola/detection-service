@@ -20,17 +20,17 @@ class HammingService:
         Pairwise similarity compatible with ComparisonService.compare.
         seq1, seq2 are sets or lists of (itemId, respostaUsuario) tuples.
         Sorts by itemId to ensure consistent ordering before comparison.
-        Returns float 0.0-1.0.
+        Returns (similarity, distance): similarity as float 0.0-1.0, distance as raw count.
         """
         s1 = [r for _, r in sorted(seq1, key=lambda x: x[0])]
         s2 = [r for _, r in sorted(seq2, key=lambda x: x[0])]
 
         n = max(len(s1), len(s2))
         if n == 0:
-            return 1.0
+            return 1.0, 0
 
         dist = HammingService.hamming_distance(s1, s2)
-        return (n - dist) / n
+        return (n - dist) / n, dist
 
     @staticmethod
     def kmeans_hamming(responses_cache, k=2, max_iter=10):
