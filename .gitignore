@@ -16,3 +16,9 @@ build/
 /kmeans_preprocessing/data_anonymized
 
 .idea/
+
+# Build artifacts / debug output / cache
+dist-detection.zip
+output_debug.txt
+pylint-report.txt
+src/public/cache/
