@@ -91,6 +91,9 @@ def importar_csvs(
     periodo = periodo.lower().strip()
     semestre = semestre.upper().strip()
 
+    with engine.begin() as conn:
+        conn.execute(text("TRUNCATE TABLE migration"))
+
     if not grupo:
         for arq in arquivos:
             if arq['area'].upper() == 'COD':
@@ -173,16 +176,7 @@ def importar_csv(
 
 def _build_clusters(engine):
     with engine.begin() as conn:
-        conn.execute(text("""
-            UPDATE migration m
-            JOIN migration cod
-                ON  cod.user_id          = m.user_id
-                AND cod.periodo          = m.periodo
-                AND cod.semestre         = m.semestre
-                AND cod.turma_ano        = m.turma_ano
-                AND cod.areaConhecimento = 'COD'
-            SET m.cluster = cod.grupo
-        """))
+        conn.execute(text("UPDATE migration SET cluster = grupo"))
 
 
 def _create_users(engine):
@@ -219,7 +213,7 @@ def _create_users(engine):
 
 
 def _create_contests(engine):
-    admin_subquery = "(SELECT id FROM users WHERE email = 'admin@admin.com')"
+    admin_subquery = "(SELECT id FROM users WHERE email = 'admin@gmail.com')"
 
     with engine.connect() as conn:
         clusters = conn.execute(text("""
@@ -261,26 +255,28 @@ def _rename_contest(engine, titulo_gerado: str, titulo_novo: str):
 def _create_aplicacoes(engine):
     with engine.begin() as conn:
         conn.execute(text("""
-            INSERT IGNORE INTO APLICACAO_PROVA (idProva, tipo, dataHoraInicio, dataHoraFim)
+            INSERT IGNORE INTO APLICACAO_PROVA (idProva, idArea, dataHoraInicio, dataHoraFim)
             SELECT
                 p.idProva,
-                m.areaConhecimento,
+                ac.idArea,
                 MIN(m.momento_entrega),
                 MAX(m.momento_entrega)
             FROM migration m
             JOIN PROVA p ON p.titulo = CONCAT(m.turma_ano, ' ano - ', m.periodo, ' - ', m.semestre, ' - ', m.cluster)
+            JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
             WHERE m.cluster         IS NOT NULL
               AND m.momento_entrega IS NOT NULL
-            GROUP BY p.idProva, m.areaConhecimento
+            GROUP BY p.idProva, ac.idArea
         """))
 
 
 def _create_questions(engine):
     with engine.begin() as conn:
         conn.execute(text("""
-            INSERT IGNORE INTO QUESTAO (nome, areaConhecimento)
-            SELECT DISTINCT m.questao, m.areaConhecimento
+            INSERT IGNORE INTO QUESTAO (nome, idArea)
+            SELECT DISTINCT m.questao, ac.idArea
             FROM migration m
+            JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
         """))
 
 
@@ -290,8 +286,9 @@ def _create_alternatives(engine):
             INSERT IGNORE INTO ALTERNATIVA (idQuestao, descricao)
             SELECT DISTINCT q.idQuestao, m.resposta
             FROM migration m
-            JOIN QUESTAO q ON q.nome            = m.questao
-                          AND q.areaConhecimento = m.areaConhecimento
+            JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
+            JOIN QUESTAO q ON q.nome  = m.questao
+                          AND q.idArea = ac.idArea
         """))
 
 
@@ -301,8 +298,9 @@ def _contests_questions(engine):
             INSERT IGNORE INTO contem (idProva, idQuestao)
             SELECT DISTINCT p.idProva, q.idQuestao
             FROM migration m
-            JOIN QUESTAO q ON q.nome            = m.questao
-                          AND q.areaConhecimento = m.areaConhecimento
+            JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
+            JOIN QUESTAO q ON q.nome  = m.questao
+                          AND q.idArea = ac.idArea
             JOIN PROVA p   ON p.titulo = CONCAT(m.turma_ano, ' ano - ', m.periodo, ' - ', m.semestre, ' - ', m.cluster)
             WHERE m.cluster IS NOT NULL
         """))
@@ -310,17 +308,26 @@ def _contests_questions(engine):
 
 def _users_answers(engine, periodo: str, semestre: str, turma_ano: int, cluster: str):
     titulo = f"{turma_ano} ano - {periodo} - {semestre} - {cluster}"
+
+    with engine.connect() as conn:
+        total_aplicacoes = conn.execute(text("""
+            SELECT COUNT(*) FROM APLICACAO_PROVA ap
+            JOIN PROVA p ON p.idProva = ap.idProva
+            WHERE p.titulo = :titulo
+        """), {"titulo": titulo}).scalar()
+
     params = {
-        'titulo':   titulo,
-        'periodo':  periodo,
-        'semestre': semestre,
-        'ano':      turma_ano,
-        'cluster':  cluster,
+        'titulo':     titulo,
+        'periodo':    periodo,
+        'semestre':   semestre,
+        'ano':        turma_ano,
+        'cluster':    cluster,
+        'min_areas':  total_aplicacoes,
     }
 
     with engine.begin() as conn:
         conn.execute(text("""
-            INSERT IGNORE INTO RESPONDE (cpf, idQuestao, idAplicacao, resposta, dataHoraResposta)
+            INSERT IGNORE INTO RESPOSTA (cpf, idQuestao, idAplicacao, resposta, dataHoraResposta)
             SELECT
                 u.cpf,
                 q.idQuestao,
@@ -328,12 +335,13 @@ def _users_answers(engine, periodo: str, semestre: str, turma_ano: int, cluster:
                 a.idAlternativa,
                 NULL
             FROM migration m
+            JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
             JOIN users           u  ON u.id         = m.user_id
             JOIN QUESTAO         q  ON q.nome        = m.questao
-                                   AND q.areaConhecimento = m.areaConhecimento
+                                   AND q.idArea       = ac.idArea
             JOIN PROVA           p  ON p.titulo      = :titulo
             JOIN APLICACAO_PROVA ap ON ap.idProva    = p.idProva
-                                   AND ap.tipo       = m.areaConhecimento
+                                   AND ap.idArea      = ac.idArea
             JOIN ALTERNATIVA     a  ON a.idQuestao   = q.idQuestao
                                    AND a.descricao   = m.resposta
             WHERE m.periodo   = :periodo
@@ -348,7 +356,7 @@ def _users_answers(engine, periodo: str, semestre: str, turma_ano: int, cluster:
                     AND m2.turma_ano = :ano
                     AND m2.periodo   = :periodo
                   GROUP BY m2.user_id
-                  HAVING COUNT(DISTINCT m2.areaConhecimento) >= 3
+                  HAVING COUNT(DISTINCT m2.areaConhecimento) >= :min_areas
               )
         """), params)
 
@@ -364,10 +372,11 @@ def _create_realiza_prova(engine):
                 MAX(m.momento_entrega),
                 1
             FROM migration m
+            JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
             JOIN users           u  ON u.id      = m.user_id
             JOIN PROVA           p  ON p.titulo   = CONCAT(m.turma_ano, ' ano - ', m.periodo, ' - ', m.semestre, ' - ', m.cluster)
             JOIN APLICACAO_PROVA ap ON ap.idProva = p.idProva
-                                   AND ap.tipo    = m.areaConhecimento
+                                   AND ap.idArea  = ac.idArea
             WHERE m.cluster        IS NOT NULL
               AND m.momento_entrega IS NOT NULL
             GROUP BY u.cpf, ap.idAplicacao
@@ -382,11 +391,12 @@ def _update_pontuacoes(engine):
             JOIN PROVA           p  ON p.idProva      = ap.idProva
             JOIN users           u  ON u.cpf          = rp.cpf
             JOIN (
-                SELECT DISTINCT user_id, areaConhecimento, turma_ano, periodo, semestre, cluster, pontuacao
-                FROM migration
-                WHERE pontuacao IS NOT NULL
-            ) m ON m.user_id         = u.id
-              AND m.areaConhecimento = ap.tipo
+                SELECT DISTINCT m.user_id, ac.idArea, m.turma_ano, m.periodo, m.semestre, m.cluster, m.pontuacao
+                FROM migration m
+                JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
+                WHERE m.pontuacao IS NOT NULL
+            ) m ON m.user_id = u.id
+              AND m.idArea   = ap.idArea
               AND CONCAT(m.turma_ano, ' ano - ', m.periodo, ' - ', m.semestre, ' - ', m.cluster) = p.titulo
             SET rp.pontuacao = m.pontuacao
         """))

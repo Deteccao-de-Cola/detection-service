@@ -15,7 +15,7 @@ class QuestionLevelService:
 
         total_alunos_sql = db.text("""
             SELECT COUNT(DISTINCT r.cpf) as total
-            FROM RESPONDE r
+            FROM RESPOSTA r
             JOIN APLICACAO_PROVA ap ON r.idAplicacao = ap.idAplicacao
             WHERE ap.idProva = :contestId
         """)
@@ -25,13 +25,13 @@ class QuestionLevelService:
             questao_id = questao['idQuestao']
 
             todas = db.session.execute(db.text("""
-                SELECT COUNT(*) FROM RESPONDE r
+                SELECT COUNT(*) FROM RESPOSTA r
                 JOIN APLICACAO_PROVA ap ON r.idAplicacao = ap.idAplicacao
                 WHERE ap.idProva = :contestId AND r.idQuestao = :questaoId
             """), {"contestId": contest_id, "questaoId": questao_id}).fetchone()[0] or 0
 
             corretas = db.session.execute(db.text("""
-                SELECT COUNT(*) FROM RESPONDE r
+                SELECT COUNT(*) FROM RESPOSTA r
                 JOIN APLICACAO_PROVA ap ON r.idAplicacao = ap.idAplicacao
                 JOIN ALTERNATIVA a ON r.resposta = a.idAlternativa AND a.alternativaCorreta = 1
                 WHERE r.idQuestao = :questaoId
