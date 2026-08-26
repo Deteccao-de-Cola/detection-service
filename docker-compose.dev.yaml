@@ -9,7 +9,9 @@ services:
     volumes:
       - .:/src
     networks:
-      - tcc-cola-network
+      tcc-cola-network:
+        aliases:
+          - detection-service
     environment:
       - FLASK_APP=app.py
       - FLASK_ENV=production
