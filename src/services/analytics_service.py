@@ -28,16 +28,7 @@ class AnalyticsService:
 
     @staticmethod
     def compute_chart_data(comparison_matrix: list) -> dict:
-        ranges = [
-            {'label': '0.0 – 0.3', 'min': 0.0,  'max': 0.3},
-            {'label': '0.3 – 0.5', 'min': 0.3,  'max': 0.5},
-            {'label': '0.5 – 0.7', 'min': 0.5,  'max': 0.7},
-            {'label': '0.7 – 0.9', 'min': 0.7,  'max': 0.9},
-            {'label': '0.9 – 1.0', 'min': 0.9,  'max': 1.01},
-        ]
-
         scatter_points = []
-        buckets = {r['label']: [] for r in ranges}
 
         for comp in comparison_matrix:
             avg_diff = _avg_diff_minutes(comp.get('user_aplicacoes'), comp.get('compared_aplicacoes'))
@@ -53,24 +44,10 @@ class AnalyticsService:
                 'avg_diff': round(avg_diff, 2)
             })
 
-            for r in ranges:
-                if r['min'] <= jaccard < r['max']:
-                    buckets[r['label']].append(avg_diff)
-                    break
-
         avg_all = (
             round(sum(p['avg_diff'] for p in scatter_points) / len(scatter_points), 2)
             if scatter_points else 0
         )
-
-        delivery_by_jaccard_range = [
-            {
-                'label': r['label'],
-                'avg_diff': round(sum(buckets[r['label']]) / len(buckets[r['label']]), 2) if buckets[r['label']] else 0,
-                'count': len(buckets[r['label']])
-            }
-            for r in ranges
-        ]
 
         # suspicion table — top 30 by max jaccard
         user_map = {}
@@ -147,7 +124,6 @@ class AnalyticsService:
         return {
             'scatter_delivery_jaccard': scatter_points,
             'avg_delivery_all_pairs': avg_all,
-            'delivery_by_jaccard_range': delivery_by_jaccard_range,
             'suspicion_table': suspicion_table,
             'delivery_vs_avg': delivery_vs_avg,
         }
