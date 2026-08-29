@@ -4,13 +4,9 @@ import pandas as pd
 from faker import Faker
 from sqlalchemy import create_engine, text
 
-fake = Faker('pt_BR')
+from src.config.database import MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DB, MYSQL_PORT
 
-MYSQL_HOST = 'db-tcc-cola'
-MYSQL_USER = 'user'
-MYSQL_PASSWORD = 'mysqlPass'
-MYSQL_DB = 'tccdb'
-MYSQL_PORT = 3306
+fake = Faker('pt_BR')
 
 AREAS_VALIDAS = ('COD', 'CN', 'HUM', 'MAT')
 

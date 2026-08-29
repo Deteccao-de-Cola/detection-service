@@ -4,15 +4,10 @@ from flask_smorest import Api
 from flask_sqlalchemy import SQLAlchemy
 from flask_mysqldb import MySQL
 from src.config.config import Config
+from src.config.database import MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DB, MYSQL_PORT
 from src.models.respostas_lake import db, RespostasLake
 
 app = Flask(__name__)
-
-MYSQL_HOST = 'db-tcc-cola'
-MYSQL_USER = 'user'
-MYSQL_PASSWORD = 'mysqlPass'
-MYSQL_DB = 'tccdb'
-MYSQL_PORT = 3306
 
 
 app.config['SQLALCHEMY_DATABASE_URI'] = (
