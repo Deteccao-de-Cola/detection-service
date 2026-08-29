@@ -7,10 +7,7 @@ def app_client():
     with app.test_client() as client:
         yield client
 
-def test_root_redirects_to_api(client):
-    response = client.get("/", follow_redirects=True)
-    assert response.status_code == 200
-
-    data = response.get_json()
-    assert data["status"] == "success"
-    assert data["message"] == "Detection Service on Production!"
+def test_root_redirects_to_swagger(client):
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/swagger-ui"
