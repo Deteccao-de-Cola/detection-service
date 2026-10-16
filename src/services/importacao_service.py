@@ -1,5 +1,6 @@
 import re
 import io
+import csv
 import pandas as pd
 from faker import Faker
 from sqlalchemy import create_engine, text
@@ -13,24 +14,69 @@ MYSQL_DB = 'tccdb'
 MYSQL_PORT = 3306
 
 AREAS_VALIDAS = ('COD', 'CN', 'HUM', 'MAT')
+SEPARADORES_CSV = (',', ';', '\t')
 
+
+class PlanilhaInvalida(ValueError):
+    pass
 
 def _engine():
     return create_engine(
-        f'mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4'
+        f'mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4',
+        hide_parameters=True,
     )
 
 def _parse_pontuacao(valor) -> int | None:
+    texto = str(valor).split('/')[0].strip()
     try:
-        return int(str(valor).split('/')[0].strip())
-    except (ValueError, AttributeError):
+        return int(float(texto))
+    except (ValueError, OverflowError):
         return None
 
 
 def _parse_grupo(nome_arquivo: str) -> str:
-    """Extrai letras de turma do nome do arquivo: COD_1ABCD_1M.csv → 'ABCD'"""
     match = re.search(r'_\d([A-Z]+)_', nome_arquivo.upper())
     return match.group(1) if match else ''
+
+
+def _parse_user_id(valor) -> int | None:
+    if pd.isna(valor):
+        return None
+    try:
+        return int(float(valor))
+    except (TypeError, ValueError):
+        match = re.search(r'_(\d+)@', str(valor))
+        return int(match.group(1)) if match else None
+
+
+def _achar_coluna(nomes: list[str], termos: list[str], padrao: int) -> int:
+    for indice, nome in enumerate(nomes):
+        for termo in termos:
+            if nome.startswith(termo):
+                return indice
+    return padrao
+
+
+def _detectar_separador(texto: str) -> str:
+
+    melhor, melhor_score = ',', -1.0
+    for sep in SEPARADORES_CSV:
+        contagens = [len(linha) for linha in csv.reader(io.StringIO(texto), delimiter=sep) if linha]
+        cabecalho = contagens[0] if contagens else 0
+        if cabecalho < 2 or max(contagens) > cabecalho:
+            continue
+        score = contagens.count(cabecalho) / len(contagens)
+        if score > melhor_score:
+            melhor, melhor_score = sep, score
+    return melhor
+
+
+def _ler_csv(conteudo: bytes) -> pd.DataFrame:
+    try:
+        texto = conteudo.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        texto = conteudo.decode('cp1252')
+    return pd.read_csv(io.StringIO(texto), sep=_detectar_separador(texto))
 
 
 def _processar_csv_bytes(
@@ -42,21 +88,48 @@ def _processar_csv_bytes(
     turma_ano: int,
     grupo: str,
 ) -> list[dict]:
-    """Lê um CSV em memória e retorna as linhas prontas para INSERT."""
-    df = pd.read_csv(io.BytesIO(conteudo))
+    """Lê um CSV ou XLSX em memória e retorna as linhas prontas para INSERT."""
+    try:
+        if nome_arquivo.lower().endswith(('.xlsx', '.xlsm')):
+            df = pd.read_excel(io.BytesIO(conteudo))
+        else:
+            df = _ler_csv(conteudo)
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as e:
+        raise PlanilhaInvalida(f"Não foi possível ler '{nome_arquivo}': {str(e).strip()}") from e
 
     if str(df.iloc[0, 0]).strip().upper() == "RESPOSTA":
         df = df.iloc[1:].reset_index(drop=True)
 
-    pontuacao_map = dict(zip(df.iloc[:, -1].values, df.iloc[:, 1].apply(_parse_pontuacao).values))
-    momento_map   = dict(zip(df.iloc[:, -1].values, pd.to_datetime(df.iloc[:, 0], errors='coerce').values))
+    #para encontrar a coluna do emal
+    nomes = [str(c).strip().upper().replace('-', '') for c in df.columns]
 
-    respostas = df.iloc[:, 3:-1].copy()
-    respostas.index = df.iloc[:, -1].values
+    col_data  = _achar_coluna(nomes, ['CARIMBO'], padrao=0)
+    col_pont  = _achar_coluna(nomes, ['PONTUA'], padrao=1)
+    col_turma = _achar_coluna(nomes, ['SÉRIE', 'TURMA'], padrao=2)
+
+    if 'ID' in nomes:
+        col_id = nomes.index('ID')
+    else:
+        col_id = len(nomes) - 1
+        for indice, nome in enumerate(nomes):
+            if 'EMAIL' in nome:
+                col_id = indice
+                break
+    user_ids = df.iloc[:, col_id].apply(_parse_user_id).values
+
+    datas    = df.iloc[:, col_data]
+    dayfirst = bool(datas.astype(str).str.match(r'\s*\d{1,2}/\d{1,2}/\d{4}').any())
+
+    pontuacao_map = dict(zip(user_ids, df.iloc[:, col_pont].apply(_parse_pontuacao).values))
+    momento_map   = dict(zip(user_ids, pd.to_datetime(datas, errors='coerce', dayfirst=dayfirst).values))
+
+    manter    = [i for i in range(df.shape[1]) if i not in {col_data, col_pont, col_turma, col_id}]
+    respostas = df.iloc[:, manter].dropna(axis=1, how='all')
+    respostas.index = user_ids
 
     df_melted = respostas.stack().dropna().reset_index()
     df_melted.columns = ["user_id", "questao", "resposta"]
-    df_melted = df_melted[df_melted["user_id"].astype(str).str.strip() != ""]
+    df_melted = df_melted[df_melted["user_id"].notna()]
     df_melted["resposta"]        = df_melted["resposta"].astype(str).str.strip().str.upper()
     df_melted["momento_entrega"] = df_melted["user_id"].apply(lambda uid: momento_map.get(uid))
     df_melted["pontuacao"]       = df_melted["user_id"].apply(lambda uid: pontuacao_map.get(uid))
@@ -91,66 +164,67 @@ def importar_csvs(
     periodo = periodo.lower().strip()
     semestre = semestre.upper().strip()
 
-    with engine.begin() as conn:
-        conn.execute(text("TRUNCATE TABLE migration"))
+    _create_staging(engine)
 
-    if not grupo:
+    try:
+        if not grupo:
+            for arq in arquivos:
+                if arq['area'].upper() == 'COD':
+                    grupo = _parse_grupo(arq['nome_arquivo'])
+                    break
+
+        if not grupo and arquivos:
+            grupo = _parse_grupo(arquivos[0]['nome_arquivo'])
+
+        total_linhas = 0
         for arq in arquivos:
-            if arq['area'].upper() == 'COD':
-                grupo = _parse_grupo(arq['nome_arquivo'])
-                break
+            area = arq['area'].upper()
+            rows = _processar_csv_bytes(
+                conteudo=arq['conteudo'],
+                nome_arquivo=arq['nome_arquivo'],
+                area=area,
+                periodo=periodo,
+                semestre=semestre,
+                turma_ano=turma_ano,
+                grupo=grupo,
+            )
+            if not rows:
+                continue
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO migration
+                        (periodo, semestre, turma_ano, areaConhecimento, resposta,
+                         user_id, questao, grupo, momento_entrega, pontuacao)
+                    VALUES
+                        (:periodo, :semestre, :turma_ano, :areaConhecimento, :resposta,
+                         :user_id, :questao, :grupo, :momento_entrega, :pontuacao)
+                """), rows)
+            total_linhas += len(rows)
 
-    if not grupo and arquivos:
-        grupo = _parse_grupo(arquivos[0]['nome_arquivo'])
+        if total_linhas == 0:
+            return {"linhas_importadas": 0, "mensagem": "Nenhum arquivo com dados válidos"}
 
-    total_linhas = 0
-    for arq in arquivos:
-        area = arq['area'].upper()
-        rows = _processar_csv_bytes(
-            conteudo=arq['conteudo'],
-            nome_arquivo=arq['nome_arquivo'],
-            area=area,
-            periodo=periodo,
-            semestre=semestre,
-            turma_ano=turma_ano,
-            grupo=grupo,
-        )
-        if not rows:
-            continue
-        with engine.begin() as conn:
-            conn.execute(text("""
-                INSERT INTO migration
-                    (periodo, semestre, turma_ano, areaConhecimento, resposta,
-                     user_id, questao, grupo, momento_entrega, pontuacao)
-                VALUES
-                    (:periodo, :semestre, :turma_ano, :areaConhecimento, :resposta,
-                     :user_id, :questao, :grupo, :momento_entrega, :pontuacao)
-            """), rows)
-        total_linhas += len(rows)
+        _build_clusters(engine)
+        _create_users(engine)
+        _create_contests(engine)
+        _create_aplicacoes(engine)
+        _create_questions(engine)
+        _create_alternatives(engine)
+        _contests_questions(engine)
+        _users_answers(engine, periodo, semestre, turma_ano, grupo)
+        _create_realiza_prova(engine)
+        _update_pontuacoes(engine)
 
-    if total_linhas == 0:
-        return {"linhas_importadas": 0, "mensagem": "Nenhum arquivo com dados válidos"}
+        # Renomeia a prova para o título customizado (após o pipeline que usa o título gerado)
+        titulo_gerado = f"{turma_ano} ano - {periodo} - {semestre} - {grupo}"
+        _rename_contest(engine, titulo_gerado, titulo)
 
-    _build_clusters(engine)
-    _create_users(engine)
-    _create_contests(engine)
-    _create_aplicacoes(engine)
-    _create_questions(engine)
-    _create_alternatives(engine)
-    _contests_questions(engine)
-    _users_answers(engine, periodo, semestre, turma_ano, grupo)
-    _create_realiza_prova(engine)
-    _update_pontuacoes(engine)
-
-    # Renomeia a prova para o título customizado (após o pipeline que usa o título gerado)
-    titulo_gerado = f"{turma_ano} ano - {periodo} - {semestre} - {grupo}"
-    _rename_contest(engine, titulo_gerado, titulo)
-
-    engine.dispose()
-    return {"linhas_importadas": total_linhas, "mensagem": "Importação concluída com sucesso"}
+        return {"linhas_importadas": total_linhas, "mensagem": "Importação concluída com sucesso"}
+    finally:
+        _drop_staging(engine)
+        engine.dispose()
 
 
-# Mantido para compatibilidade com chamadas que passam um único arquivo
 def importar_csv(
     conteudo: bytes,
     nome_arquivo: str,
@@ -172,7 +246,38 @@ def importar_csv(
     )
 
 
-# ── helpers de pipeline ────────────────────────────────────────────────────────
+# ──----------------------------- helpers de pipeline ──-----------------------------
+
+def _create_staging(engine):
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS migration"))
+        conn.execute(text("""
+            CREATE TABLE migration (
+                id               INT AUTO_INCREMENT PRIMARY KEY,
+                user_id          INT NOT NULL,
+                periodo          VARCHAR(20) NOT NULL,
+                semestre         VARCHAR(10) NOT NULL,
+                turma_ano        INT NOT NULL,
+                areaConhecimento VARCHAR(10) NOT NULL,
+                resposta         TEXT NOT NULL,
+                questao          TEXT NOT NULL,
+                grupo            VARCHAR(20) NOT NULL DEFAULT '',
+                momento_entrega  DATETIME NULL,
+                pontuacao        INT NULL,
+                cluster          VARCHAR(20) NULL,
+                KEY idx_migration_join     (user_id, periodo, semestre, turma_ano, areaConhecimento),
+                KEY idx_migration_cluster  (periodo, semestre, turma_ano, cluster),
+                KEY idx_migration_questao  (questao(191)),
+                KEY idx_migration_resposta (resposta(191))
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """))
+
+
+def _drop_staging(engine):
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS migration"))
+
 
 def _build_clusters(engine):
     with engine.begin() as conn:

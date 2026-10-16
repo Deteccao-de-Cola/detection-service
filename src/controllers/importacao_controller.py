@@ -1,7 +1,7 @@
 from flask import request
 from flask_smorest import Blueprint
 from src.schemas import ImportacaoResponseSchema
-from src.services.importacao_service import importar_csvs, AREAS_VALIDAS
+from src.services.importacao_service import importar_csvs, AREAS_VALIDAS, PlanilhaInvalida
 
 importacao = Blueprint("importacao", __name__, description="Importação de provas via CSV")
 
@@ -50,13 +50,16 @@ def importar():
     if not arquivos:
         return {"mensagem": "Envie ao menos um arquivo CSV (arquivo_cod, arquivo_cn, arquivo_hum ou arquivo_mat)"}, 400
 
-    resultado = importar_csvs(
-        arquivos=arquivos,
-        titulo=titulo,
-        periodo=periodo,
-        semestre=semestre,
-        turma_ano=turma_ano,
-        grupo=grupo,
-    )
+    try:
+        resultado = importar_csvs(
+            arquivos=arquivos,
+            titulo=titulo,
+            periodo=periodo,
+            semestre=semestre,
+            turma_ano=turma_ano,
+            grupo=grupo,
+        )
+    except PlanilhaInvalida as e:
+        return {"mensagem": str(e)}, 400
 
     return resultado
