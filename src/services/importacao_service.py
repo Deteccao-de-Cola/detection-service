@@ -1,5 +1,5 @@
-import re
 import io
+import csv
 import pandas as pd
 from faker import Faker
 from sqlalchemy import create_engine, text
@@ -8,25 +8,93 @@ from src.config.database import MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DB
 
 fake = Faker('pt_BR')
 
-AREAS_VALIDAS = ('COD', 'CN', 'HUM', 'MAT')
+# Steps of the migration:
+#  - (importar_csvs) Receive and read files mapping the last collumn with user id in database. 
+#  - (_create_staging) Insert in ´temporary´ migrations table 
+#  - (_create_users) Insert users (faked ones) from migration table to users table using the id in the table to correlate both
+#  - (_create_contest) Criação das provas a partir da concactenação de turmas utilizando um HAVING BY 
+#  - (_create_questions) Cria as questões e as liga à prova pela tabela contem (N:M)
+#  - (_create_alternatives) Insere as alternativas
+#  - (_aplicar_gabarito) Insere no gabarito a partir da buscas das questoes de dentro da prova
+#  - (_users_answers) Armazena as alternativas escolhidas pelos alunos nas provas a partir do where filtrando por turuma turno periodo etc. Concatenando apenas os usuários que tiverem o minimo de aplicacoes para aquela prova (3) no caso, para remover usuários faltantes em alguma das provas. 
+#       - Pra essa parte eu preciso de garantir que os alunos nao estarao duplicados nas tabelas. 
+#  - (_create_realiza_prova) Cria realiza prova que é responsavel por armazenar qual prova foi realizada por qual usuario bem como armazenar a pontuacao do mesmo em cada aplicacao    
+#. - (_update_pontuacoes)Atualiza a pontuação dos usuarios dentro de cada prova
 
+
+AREAS_VALIDAS = ('COD', 'CN', 'HUM', 'MAT')
+SEPARADORES_CSV = (',', ';', '\t')
+
+
+class PlanilhaInvalida(ValueError):
+    pass
 
 def _engine():
     return create_engine(
-        f'mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4'
+        f'mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4',
+        hide_parameters=True,
     )
 
 def _parse_pontuacao(valor) -> int | None:
+    texto = str(valor).split('/')[0].strip()
     try:
-        return int(str(valor).split('/')[0].strip())
-    except (ValueError, AttributeError):
+        return int(float(texto))
+    except (ValueError, OverflowError):
         return None
 
 
-def _parse_grupo(nome_arquivo: str) -> str:
-    """Extrai letras de turma do nome do arquivo: COD_1ABCD_1M.csv → 'ABCD'"""
-    match = re.search(r'_\d([A-Z]+)_', nome_arquivo.upper())
-    return match.group(1) if match else ''
+def _parse_user_id(valor) -> int | None:
+    if pd.isna(valor):
+        return None
+    try:
+        return int(float(valor))
+    except (TypeError, ValueError):
+        return None
+
+
+def _achar_coluna(nomes: list[str], termos: list[str], padrao: int) -> int:
+    for indice, nome in enumerate(nomes):
+        for termo in termos:
+            if nome.startswith(termo):
+                return indice
+    return padrao
+
+
+def _detectar_separador(texto: str) -> str:
+
+    melhor, melhor_score = ',', -1.0
+    for sep in SEPARADORES_CSV:
+        contagens = [len(linha) for linha in csv.reader(io.StringIO(texto), delimiter=sep) if linha]
+        cabecalho = contagens[0] if contagens else 0
+        if cabecalho < 2 or max(contagens) > cabecalho:
+            continue
+        score = contagens.count(cabecalho) / len(contagens)
+        if score > melhor_score:
+            melhor, melhor_score = sep, score
+    return melhor
+
+
+def _ler_csv(conteudo: bytes) -> pd.DataFrame:
+    try:
+        texto = conteudo.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        texto = conteudo.decode('cp1252')
+    return pd.read_csv(io.StringIO(texto), sep=_detectar_separador(texto), dtype=str)
+
+
+def _ler_planilha(conteudo: bytes, nome_arquivo: str) -> pd.DataFrame:
+    """Lê um CSV ou XLSX em memória. Tudo como texto, para '40' não virar '40.0'."""
+    try:
+        if nome_arquivo.lower().endswith(('.xlsx', '.xlsm')):
+            return pd.read_excel(io.BytesIO(conteudo), dtype=str)
+        return _ler_csv(conteudo)
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError) as e:
+        raise PlanilhaInvalida(f"Não foi possível ler '{nome_arquivo}': {str(e).strip()}") from e
+
+
+def _normalizar_respostas(respostas: pd.Series) -> pd.Series:
+    """Mesma normalização para alunos e gabarito; se divergirem, a alternativa certa não casa."""
+    return respostas.astype(str).str.strip().str.upper()
 
 
 def _processar_csv_bytes(
@@ -38,22 +106,40 @@ def _processar_csv_bytes(
     turma_ano: int,
     grupo: str,
 ) -> list[dict]:
-    """Lê um CSV em memória e retorna as linhas prontas para INSERT."""
-    df = pd.read_csv(io.BytesIO(conteudo))
+    """Lê um CSV ou XLSX em memória e retorna as linhas prontas para INSERT."""
+    df = _ler_planilha(conteudo, nome_arquivo)
 
     if str(df.iloc[0, 0]).strip().upper() == "RESPOSTA":
         df = df.iloc[1:].reset_index(drop=True)
 
-    pontuacao_map = dict(zip(df.iloc[:, -1].values, df.iloc[:, 1].apply(_parse_pontuacao).values))
-    momento_map   = dict(zip(df.iloc[:, -1].values, pd.to_datetime(df.iloc[:, 0], errors='coerce').values))
+    #para encontrar as colunas fixas (carimbo, pontuação, turma e ID)
+    nomes = [str(c).strip().upper().replace('-', '') for c in df.columns]
 
-    respostas = df.iloc[:, 3:-1].copy()
-    respostas.index = df.iloc[:, -1].values
+    col_data  = _achar_coluna(nomes, ['CARIMBO'], padrao=0)
+    col_pont  = _achar_coluna(nomes, ['PONTUA'], padrao=1)
+    col_turma = _achar_coluna(nomes, ['SÉRIE', 'TURMA'], padrao=2)
+
+    # Sem fallback: o ID é a única chave do aluno, e adivinhar a coluna mistura alunos
+    if 'ID' not in nomes:
+        raise PlanilhaInvalida(f"'{nome_arquivo}' não tem a coluna ID, que identifica o aluno.")
+    
+    col_id   = nomes.index('ID')
+    user_ids = df.iloc[:, col_id].apply(_parse_user_id).values
+
+    datas    = df.iloc[:, col_data]
+    dayfirst = bool(datas.astype(str).str.match(r'\s*\d{1,2}/\d{1,2}/\d{4}').any())
+
+    pontuacao_map = dict(zip(user_ids, df.iloc[:, col_pont].apply(_parse_pontuacao).values))
+    momento_map   = dict(zip(user_ids, pd.to_datetime(datas, errors='coerce', dayfirst=dayfirst).values))
+
+    manter    = [i for i in range(df.shape[1]) if i not in {col_data, col_pont, col_turma, col_id}]
+    respostas = df.iloc[:, manter].dropna(axis=1, how='all')
+    respostas.index = user_ids
 
     df_melted = respostas.stack().dropna().reset_index()
     df_melted.columns = ["user_id", "questao", "resposta"]
-    df_melted = df_melted[df_melted["user_id"].astype(str).str.strip() != ""]
-    df_melted["resposta"]        = df_melted["resposta"].astype(str).str.strip().str.upper()
+    df_melted = df_melted[df_melted["user_id"].notna()]
+    df_melted["resposta"]        = _normalizar_respostas(df_melted["resposta"])
     df_melted["momento_entrega"] = df_melted["user_id"].apply(lambda uid: momento_map.get(uid))
     df_melted["pontuacao"]       = df_melted["user_id"].apply(lambda uid: pontuacao_map.get(uid))
 
@@ -76,112 +162,113 @@ def _processar_csv_bytes(
 
 def importar_csvs(
     arquivos: list[dict],
-    titulo: str,
+    ano_aplicacao: int,
+    serie: int,
     periodo: str,
-    semestre: str,
-    turma_ano: int,
-    grupo: str = '',
+    bimestre: str,
+    turmas: str,
 ) -> dict:
 
-    engine  = _engine()
-    periodo = periodo.lower().strip()
-    semestre = semestre.upper().strip()
+    engine   = _engine()
+    periodo  = periodo.lower().strip()
+    bimestre = bimestre.upper().strip()
+    turmas   = ''.join(sorted(turmas.upper().strip()))
 
-    with engine.begin() as conn:
-        conn.execute(text("TRUNCATE TABLE migration"))
+    _create_staging(engine)
 
-    if not grupo:
+    try:
+        total_linhas = 0
+        gabaritos = {}
         for arq in arquivos:
-            if arq['area'].upper() == 'COD':
-                grupo = _parse_grupo(arq['nome_arquivo'])
-                break
+            area = arq['area'].upper()
+            # A staging mantém os nomes antigos: semestre = bimestre, turma_ano = série, grupo = turmas
+            rows = _processar_csv_bytes(
+                conteudo=arq['conteudo'],
+                nome_arquivo=arq['nome_arquivo'],
+                area=area,
+                periodo=periodo,
+                semestre=bimestre,
+                turma_ano=serie,
+                grupo=turmas,
+            )
+            if not rows:
+                continue
+            # Lido aqui para que um gabarito inválido falhe antes de qualquer gravação na prova
+            if arq.get('gabarito'):
+                gabaritos[area] = _receive_answer_keys(arq['gabarito'], arq['nome_gabarito'])
+                
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    INSERT INTO migration
+                        (periodo, semestre, turma_ano, areaConhecimento, resposta,
+                         user_id, questao, grupo, momento_entrega, pontuacao)
+                    VALUES
+                        (:periodo, :semestre, :turma_ano, :areaConhecimento, :resposta,
+                         :user_id, :questao, :grupo, :momento_entrega, :pontuacao)
+                """), rows)
+            total_linhas += len(rows)
 
-    if not grupo and arquivos:
-        grupo = _parse_grupo(arquivos[0]['nome_arquivo'])
+        if total_linhas == 0:
+            return {"linhas_importadas": 0, "mensagem": "Nenhum arquivo com dados válidos"}
 
-    total_linhas = 0
-    for arq in arquivos:
-        area = arq['area'].upper()
-        rows = _processar_csv_bytes(
-            conteudo=arq['conteudo'],
-            nome_arquivo=arq['nome_arquivo'],
-            area=area,
-            periodo=periodo,
-            semestre=semestre,
-            turma_ano=turma_ano,
-            grupo=grupo,
-        )
-        if not rows:
-            continue
-        with engine.begin() as conn:
-            conn.execute(text("""
-                INSERT INTO migration
-                    (periodo, semestre, turma_ano, areaConhecimento, resposta,
-                     user_id, questao, grupo, momento_entrega, pontuacao)
-                VALUES
-                    (:periodo, :semestre, :turma_ano, :areaConhecimento, :resposta,
-                     :user_id, :questao, :grupo, :momento_entrega, :pontuacao)
-            """), rows)
-        total_linhas += len(rows)
+        _create_users(engine)
 
-    if total_linhas == 0:
-        return {"linhas_importadas": 0, "mensagem": "Nenhum arquivo com dados válidos"}
+        # A prova é localizada uma única vez; daqui em diante todas as etapas usam o idProva
+        id_prova = _create_contest(engine, ano_aplicacao, serie, periodo, bimestre, turmas)
 
-    _build_clusters(engine)
-    _create_users(engine)
-    _create_contests(engine)
-    _create_aplicacoes(engine)
-    _create_questions(engine)
-    _create_alternatives(engine)
-    _contests_questions(engine)
-    _users_answers(engine, periodo, semestre, turma_ano, grupo)
-    _create_realiza_prova(engine)
-    _update_pontuacoes(engine)
+        _create_aplicacoes(engine, id_prova)
+        _create_questions(engine, id_prova)
+        _create_alternatives(engine, id_prova)
+        for area, gabarito in gabaritos.items():
+            _aplicar_gabarito(engine, id_prova, area, gabarito)
+        _users_answers(engine, id_prova)
+        _create_realiza_prova(engine, id_prova)
+        _update_pontuacoes(engine, id_prova)
 
-    # Renomeia a prova para o título customizado (após o pipeline que usa o título gerado)
-    titulo_gerado = f"{turma_ano} ano - {periodo} - {semestre} - {grupo}"
-    _rename_contest(engine, titulo_gerado, titulo)
+        return {"linhas_importadas": total_linhas, "mensagem": "Importação concluída com sucesso"}
+    finally:
+        _drop_staging(engine)
+        engine.dispose()
 
-    engine.dispose()
-    return {"linhas_importadas": total_linhas, "mensagem": "Importação concluída com sucesso"}
-
-
-# Mantido para compatibilidade com chamadas que passam um único arquivo
-def importar_csv(
-    conteudo: bytes,
-    nome_arquivo: str,
-    periodo: str,
-    semestre: str,
-    turma_ano: int,
-    area: str,
-    grupo: str | None = None,
-) -> dict:
-    grupo_efetivo = grupo or _parse_grupo(nome_arquivo)
-    titulo_padrao = f"{turma_ano} ano - {periodo.lower()} - {semestre.upper()} - {grupo_efetivo}"
-    return importar_csvs(
-        arquivos=[{'conteudo': conteudo, 'nome_arquivo': nome_arquivo, 'area': area}],
-        titulo=titulo_padrao,
-        periodo=periodo,
-        semestre=semestre,
-        turma_ano=turma_ano,
-        grupo=grupo_efetivo,
-    )
-
-
-# ── helpers de pipeline ────────────────────────────────────────────────────────
-
-def _build_clusters(engine):
+def _create_staging(engine):
     with engine.begin() as conn:
-        conn.execute(text("UPDATE migration SET cluster = grupo"))
+        conn.execute(text("DROP TABLE IF EXISTS migration"))
+        conn.execute(text("""
+            CREATE TABLE migration (
+                id               INT AUTO_INCREMENT PRIMARY KEY,
+                user_id          INT NOT NULL,
+                periodo          VARCHAR(20) NOT NULL,
+                semestre         VARCHAR(10) NOT NULL,
+                turma_ano        INT NOT NULL,
+                areaConhecimento VARCHAR(10) NOT NULL,
+                resposta         TEXT NOT NULL,
+                questao          TEXT NOT NULL,
+                grupo            VARCHAR(20) NOT NULL DEFAULT '',
+                momento_entrega  DATETIME NULL,
+                pontuacao        INT NULL,
+                KEY idx_migration_join     (user_id, periodo, semestre, turma_ano, areaConhecimento),
+                KEY idx_migration_questao  (questao(191)),
+                KEY idx_migration_resposta (resposta(191))
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """))
+
+
+def _drop_staging(engine):
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS migration"))
 
 
 def _create_users(engine):
     with engine.connect() as conn:
+        #Query utilizada para encontrar os usuarios da migracao que nao existem na tabela users
         user_ids = conn.execute(text(
-            "SELECT DISTINCT user_id FROM migration m "
-            "WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = m.user_id)"
+            "SELECT DISTINCT user_id FROM migration "
+            "WHERE user_id NOT IN (SELECT id FROM users)"
         )).fetchall()
 
+    # Aqui para cada linha dentro da tabela de migrações em que um usuário nao existir na tabela de users é criado u usuário para o mesmo (tenta)
+    # 5 vezes pro caso de ocorrer alguma colisao. 
     for (user_id,) in user_ids:
         for _ in range(5):
             try:
@@ -208,191 +295,231 @@ def _create_users(engine):
                 continue
 
 
-def _create_contests(engine):
-    admin_subquery = "(SELECT id FROM users WHERE email = 'admin@gmail.com')"
+def _create_contest(engine, ano_aplicacao: int, serie: int, periodo: str, bimestre: str, turmas: str) -> int:
+    """Devolve o idProva da prova com exatamente esta identificação (mesmo ano, série,
+    período, bimestre e conjunto de turmas), criando-a se ainda não existir.
 
-    with engine.connect() as conn:
-        clusters = conn.execute(text("""
-            SELECT DISTINCT periodo, semestre, turma_ano, cluster
-            FROM migration
-            WHERE cluster IS NOT NULL
-            ORDER BY turma_ano, periodo, semestre, cluster
+    Turmas que se cruzam com outra prova já foram barradas no Laravel (PROVA::conflitoDeTurmas).
+    """
+    chave = {
+        "ano_aplicacao": ano_aplicacao,
+        "serie":         str(serie),  # texto: ENUM('1','2','3') trata número como posição
+        "periodo":       periodo,
+        "bimestre":      bimestre,
+    }
+    with engine.begin() as conn:
+        id_prova = conn.execute(text("""
+            SELECT p.idProva
+            FROM PROVA p
+            JOIN PROVA_TURMA t ON t.idProva = p.idProva
+            WHERE p.anoAplicacao = :ano_aplicacao
+              AND p.serie        = :serie
+              AND p.periodo      = :periodo
+              AND p.bimestre     = :bimestre
+            GROUP BY p.idProva
+            HAVING GROUP_CONCAT(t.letra ORDER BY t.letra SEPARATOR '') = :turmas
+        """), {**chave, "turmas": turmas}).scalar()
+
+        if id_prova is None:
+            # A coluna titulo ainda é obrigatória; mesmo formato do PROVA::tituloGerado do Laravel
+            id_prova = conn.execute(text("""
+                INSERT INTO PROVA (titulo, anoAplicacao, serie, periodo, bimestre,
+                                   tempoMaximo, salvarTempoResposta, createdBy)
+                VALUES (:titulo, :ano_aplicacao, :serie, :periodo, :bimestre, 90, 0,
+                        (SELECT id FROM users WHERE email = 'admin@gmail.com'))
+            """), {**chave, "titulo": f"{serie} ano - {periodo} - {bimestre} - {turmas}"}).lastrowid
+
+            conn.execute(text(
+                "INSERT INTO PROVA_TURMA (idProva, letra) VALUES (:id_prova, :letra)"
+            ), [{"id_prova": id_prova, "letra": letra} for letra in turmas])
+    return id_prova
+
+
+def _create_aplicacoes(engine, id_prova: int):
+    with engine.begin() as conn:
+        janelas = conn.execute(text("""
+            SELECT ac.idArea, MIN(m.momento_entrega), MAX(m.momento_entrega)
+            FROM migration m
+            JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
+            WHERE m.momento_entrega IS NOT NULL
+            GROUP BY ac.idArea
         """)).fetchall()
 
-    rows = []
-    for c in clusters:
-        titulo = f"{c.turma_ano} ano - {c.periodo} - {c.semestre} - {c.cluster}"
-        with engine.connect() as conn:
-            existe = conn.execute(
-                text("SELECT 1 FROM PROVA WHERE titulo = :titulo"),
-                {"titulo": titulo}
-            ).fetchone()
-        if not existe:
-            rows.append(f"('{titulo}', 90, 0, {admin_subquery})")
+        existentes = {id_area for (id_area,) in conn.execute(text(
+            "SELECT idArea FROM APLICACAO_PROVA WHERE idProva = :id_prova"
+        ), {"id_prova": id_prova})}
 
-    if rows:
-        with engine.begin() as conn:
-            conn.execute(text(
-                "INSERT INTO PROVA (titulo, tempoMaximo, salvarTempoResposta, createdBy) VALUES "
-                + ", ".join(rows)
-            ))
+        for id_area, inicio, fim in janelas:
+            if id_area not in existentes:
+                conn.execute(text("""
+                    INSERT INTO APLICACAO_PROVA (idProva, idArea, dataHoraInicio, dataHoraFim)
+                    VALUES (:id_prova, :id_area, :inicio, :fim)
+                """), {"id_prova": id_prova, "id_area": id_area, "inicio": inicio, "fim": fim})
 
 
-def _rename_contest(engine, titulo_gerado: str, titulo_novo: str):
-    """Renomeia a PROVA criada pelo pipeline para o título customizado."""
-    if titulo_gerado == titulo_novo:
-        return
+def _create_questions(engine, id_prova: int):
+    # Prova e questão se ligam pela contem (N:M); por isso cada questão nova precisa do seu idQuestao
     with engine.begin() as conn:
-        conn.execute(text(
-            "UPDATE PROVA SET titulo = :novo WHERE titulo = :gerado"
-        ), {"novo": titulo_novo, "gerado": titulo_gerado})
-
-
-def _create_aplicacoes(engine):
-    with engine.begin() as conn:
-        conn.execute(text("""
-            INSERT IGNORE INTO APLICACAO_PROVA (idProva, idArea, dataHoraInicio, dataHoraFim)
-            SELECT
-                p.idProva,
-                ac.idArea,
-                MIN(m.momento_entrega),
-                MAX(m.momento_entrega)
-            FROM migration m
-            JOIN PROVA p ON p.titulo = CONCAT(m.turma_ano, ' ano - ', m.periodo, ' - ', m.semestre, ' - ', m.cluster)
-            JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
-            WHERE m.cluster         IS NOT NULL
-              AND m.momento_entrega IS NOT NULL
-            GROUP BY p.idProva, ac.idArea
-        """))
-
-
-def _create_questions(engine):
-    with engine.begin() as conn:
-        conn.execute(text("""
-            INSERT IGNORE INTO QUESTAO (nome, idArea)
+        novas = conn.execute(text("""
             SELECT DISTINCT m.questao, ac.idArea
             FROM migration m
             JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
-        """))
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM contem c
+                JOIN QUESTAO q ON q.idQuestao = c.idQuestao
+                WHERE c.idProva   = :id_prova
+                  AND q.idArea    = ac.idArea
+                  AND q.descricao = m.questao
+            )
+        """), {"id_prova": id_prova}).fetchall()
+
+        for questao, id_area in novas:
+            id_questao = conn.execute(text(
+                "INSERT INTO QUESTAO (descricao, observacao, idArea) VALUES (:descricao, '', :id_area)"
+            ), {"descricao": questao, "id_area": id_area}).lastrowid
+            conn.execute(text(
+                "INSERT INTO contem (idProva, idQuestao) VALUES (:id_prova, :id_questao)"
+            ), {"id_prova": id_prova, "id_questao": id_questao})
 
 
-def _create_alternatives(engine):
+def _create_alternatives(engine, id_prova: int):
     with engine.begin() as conn:
         conn.execute(text("""
-            INSERT IGNORE INTO ALTERNATIVA (idQuestao, descricao)
+            INSERT INTO ALTERNATIVA (idQuestao, descricao)
             SELECT DISTINCT q.idQuestao, m.resposta
             FROM migration m
             JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
-            JOIN QUESTAO q ON q.nome  = m.questao
-                          AND q.idArea = ac.idArea
-        """))
+            JOIN contem  c ON c.idProva   = :id_prova
+            JOIN QUESTAO q ON q.idQuestao = c.idQuestao
+                          AND q.idArea    = ac.idArea
+                          AND q.descricao = m.questao
+            LEFT JOIN ALTERNATIVA a ON a.idQuestao = q.idQuestao
+                                   AND a.descricao = m.resposta
+            WHERE a.idAlternativa IS NULL
+        """), {"id_prova": id_prova})
 
 
-def _contests_questions(engine):
+def _users_answers(engine, id_prova: int):
     with engine.begin() as conn:
-        conn.execute(text("""
-            INSERT IGNORE INTO contem (idProva, idQuestao)
-            SELECT DISTINCT p.idProva, q.idQuestao
-            FROM migration m
-            JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
-            JOIN QUESTAO q ON q.nome  = m.questao
-                          AND q.idArea = ac.idArea
-            JOIN PROVA p   ON p.titulo = CONCAT(m.turma_ano, ' ano - ', m.periodo, ' - ', m.semestre, ' - ', m.cluster)
-            WHERE m.cluster IS NOT NULL
-        """))
+        total_aplicacoes = conn.execute(text(
+            "SELECT COUNT(*) FROM APLICACAO_PROVA WHERE idProva = :id_prova"
+        ), {"id_prova": id_prova}).scalar()
 
-
-def _users_answers(engine, periodo: str, semestre: str, turma_ano: int, cluster: str):
-    titulo = f"{turma_ano} ano - {periodo} - {semestre} - {cluster}"
-
-    with engine.connect() as conn:
-        total_aplicacoes = conn.execute(text("""
-            SELECT COUNT(*) FROM APLICACAO_PROVA ap
-            JOIN PROVA p ON p.idProva = ap.idProva
-            WHERE p.titulo = :titulo
-        """), {"titulo": titulo}).scalar()
-
-    params = {
-        'titulo':     titulo,
-        'periodo':    periodo,
-        'semestre':   semestre,
-        'ano':        turma_ano,
-        'cluster':    cluster,
-        'min_areas':  total_aplicacoes,
-    }
-
-    with engine.begin() as conn:
-        conn.execute(text("""
-            INSERT IGNORE INTO RESPOSTA (cpf, idQuestao, idAplicacao, resposta, dataHoraResposta)
-            SELECT
-                u.cpf,
-                q.idQuestao,
-                ap.idAplicacao,
-                a.idAlternativa,
-                NULL
+        respostas = conn.execute(text("""
+            SELECT u.cpf, q.idQuestao, ap.idAplicacao, a.idAlternativa
             FROM migration m
             JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
             JOIN users           u  ON u.id         = m.user_id
-            JOIN QUESTAO         q  ON q.nome        = m.questao
+            JOIN contem          c  ON c.idProva     = :id_prova
+            JOIN QUESTAO         q  ON q.idQuestao   = c.idQuestao
                                    AND q.idArea       = ac.idArea
-            JOIN PROVA           p  ON p.titulo      = :titulo
-            JOIN APLICACAO_PROVA ap ON ap.idProva    = p.idProva
+                                   AND q.descricao    = m.questao
+            JOIN APLICACAO_PROVA ap ON ap.idProva    = :id_prova
                                    AND ap.idArea      = ac.idArea
             JOIN ALTERNATIVA     a  ON a.idQuestao   = q.idQuestao
                                    AND a.descricao   = m.resposta
-            WHERE m.periodo   = :periodo
-              AND m.semestre  = :semestre
-              AND m.turma_ano = :ano
-              AND m.cluster   = :cluster
-              AND m.user_id IN (
-                  SELECT m2.user_id
-                  FROM migration m2
-                  WHERE m2.cluster   = :cluster
-                    AND m2.semestre  = :semestre
-                    AND m2.turma_ano = :ano
-                    AND m2.periodo   = :periodo
-                  GROUP BY m2.user_id
-                  HAVING COUNT(DISTINCT m2.areaConhecimento) >= :min_areas
-              )
-        """), params)
+            WHERE m.user_id IN (
+                SELECT m2.user_id
+                FROM migration m2
+                GROUP BY m2.user_id
+                HAVING COUNT(DISTINCT m2.areaConhecimento) >= :min_areas
+            )
+        """), {"id_prova": id_prova, "min_areas": total_aplicacoes}).fetchall()
+
+        for cpf, id_questao, id_aplicacao, id_alternativa in respostas:
+            #CONSTRAINT RESPOSTA_UQ UNIQUE (cpf, idQuestao, idAplicacao),
+            #Em outras palavras o mesmo usuário na mesma questao na mesma aplicacao nao pode ter duas respostas
+            conn.execute(text("""
+                INSERT INTO RESPOSTA (cpf, idQuestao, idAplicacao, resposta, dataHoraResposta)
+                VALUES (:cpf, :id_questao, :id_aplicacao, :id_alternativa, NULL)
+                ON DUPLICATE KEY UPDATE resposta = :id_alternativa
+            """), {
+                "cpf":            cpf,
+                "id_questao":     id_questao,
+                "id_aplicacao":   id_aplicacao,
+                "id_alternativa": id_alternativa,
+            })
 
 
-def _create_realiza_prova(engine):
+def _create_realiza_prova(engine, id_prova: int):
+    # Mesma tabela derivada de _create_aplicacoes, por causa do MAX no ON DUPLICATE KEY
     with engine.begin() as conn:
         conn.execute(text("""
-            INSERT IGNORE INTO realiza_prova (cpf, idAplicacao, dataHoraInicio, dataHoraFim, finalizada)
-            SELECT
-                u.cpf,
-                ap.idAplicacao,
-                NULL,
-                MAX(m.momento_entrega),
-                1
-            FROM migration m
-            JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
-            JOIN users           u  ON u.id      = m.user_id
-            JOIN PROVA           p  ON p.titulo   = CONCAT(m.turma_ano, ' ano - ', m.periodo, ' - ', m.semestre, ' - ', m.cluster)
-            JOIN APLICACAO_PROVA ap ON ap.idProva = p.idProva
-                                   AND ap.idArea  = ac.idArea
-            WHERE m.cluster        IS NOT NULL
-              AND m.momento_entrega IS NOT NULL
-            GROUP BY u.cpf, ap.idAplicacao
-        """))
+            INSERT INTO realiza_prova (cpf, idAplicacao, dataHoraInicio, dataHoraFim, finalizada)
+            SELECT * FROM (
+                SELECT
+                    u.cpf                  AS cpf,
+                    ap.idAplicacao         AS idAplicacao,
+                    NULL                   AS dataHoraInicio,
+                    MAX(m.momento_entrega) AS fim,
+                    1                      AS finalizada
+                FROM migration m
+                JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
+                JOIN users           u  ON u.id      = m.user_id
+                JOIN APLICACAO_PROVA ap ON ap.idProva = :id_prova
+                                       AND ap.idArea  = ac.idArea
+                WHERE m.momento_entrega IS NOT NULL
+                GROUP BY u.cpf, ap.idAplicacao
+            ) AS nova
+            ON DUPLICATE KEY UPDATE dataHoraFim = nova.fim
+        """), {"id_prova": id_prova})
 
 
-def _update_pontuacoes(engine):
+def _update_pontuacoes(engine, id_prova: int):
     with engine.begin() as conn:
         conn.execute(text("""
             UPDATE realiza_prova rp
             JOIN APLICACAO_PROVA ap ON ap.idAplicacao = rp.idAplicacao
-            JOIN PROVA           p  ON p.idProva      = ap.idProva
             JOIN users           u  ON u.cpf          = rp.cpf
             JOIN (
-                SELECT DISTINCT m.user_id, ac.idArea, m.turma_ano, m.periodo, m.semestre, m.cluster, m.pontuacao
+                SELECT DISTINCT m.user_id, ac.idArea, m.pontuacao
                 FROM migration m
                 JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
                 WHERE m.pontuacao IS NOT NULL
             ) m ON m.user_id = u.id
               AND m.idArea   = ap.idArea
-              AND CONCAT(m.turma_ano, ' ano - ', m.periodo, ' - ', m.semestre, ' - ', m.cluster) = p.titulo
             SET rp.pontuacao = m.pontuacao
-        """))
+            WHERE ap.idProva = :id_prova
+        """), {"id_prova": id_prova})
+
+
+def _receive_answer_keys(conteudo: bytes, nome_arquivo: str) -> list[dict]:
+    """Lê o arquivo de gabarito: o cabeçalho tem as questões e a única linha tem a resposta certa de cada uma."""
+    df = _ler_planilha(conteudo, nome_arquivo)
+
+    if len(df) != 1:
+        raise PlanilhaInvalida(
+            f"O gabarito '{nome_arquivo}' deve ter exatamente uma linha de respostas, mas tem {len(df)}."
+        )
+
+    linha = df.iloc[0]
+    # Todo gabarito tem resposta em todas as colunas; célula vazia significa cabeçalho e respostas desalinhados
+    if linha.isna().any():
+        raise PlanilhaInvalida(
+            f"O gabarito '{nome_arquivo}' tem {len(df.columns)} colunas no cabeçalho e "
+            f"{int(linha.notna().sum())} respostas. Confira se o cabeçalho tem só as colunas de questão."
+        )
+
+    respostas = _normalizar_respostas(linha)
+
+    return [
+        {"questao": str(questao), "resposta": resposta}
+        for questao, resposta in respostas.items()
+    ]
+
+
+def _aplicar_gabarito(engine, id_prova: int, area: str, gabarito: list[dict]):
+    """Marca, em cada questão da prova, a alternativa que bate com o gabarito."""
+    # Comparação em vez de 1 fixo: num reimport com gabarito corrigido, a alternativa antiga é desmarcada
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE ALTERNATIVA a
+            JOIN QUESTAO q            ON q.idQuestao = a.idQuestao
+            JOIN contem c             ON c.idQuestao = q.idQuestao
+            JOIN AREA_CONHECIMENTO ac ON ac.idArea   = q.idArea
+            SET a.alternativaCorreta = (a.descricao = :resposta)
+            WHERE c.idProva   = :id_prova
+              AND ac.sigla    = :area
+              AND q.descricao = :questao
+        """), [{"id_prova": id_prova, "area": area, **item} for item in gabarito])
