@@ -67,6 +67,7 @@ def importar():
         return {"mensagem": "Envie ao menos um arquivo CSV (arquivo_cod, arquivo_cn, arquivo_hum ou arquivo_mat)"}, 400
 
     try:
+        #Trava para nao escrever simultaneamente na tabela do banco
         with _trava_importacao:
             resultado = importar_csvs(
                 arquivos=arquivos,

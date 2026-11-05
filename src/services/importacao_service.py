@@ -124,6 +124,7 @@ def _processar_csv_bytes(
         raise PlanilhaInvalida(f"'{nome_arquivo}' não tem a coluna ID, que identifica o aluno.")
     
     col_id   = nomes.index('ID')
+    df       = df.drop_duplicates(subset=df.columns[col_id], keep='last')
     user_ids = df.iloc[:, col_id].apply(_parse_user_id).values
 
     datas    = df.iloc[:, col_data]
@@ -196,7 +197,16 @@ def importar_csvs(
             # Lido aqui para que um gabarito inválido falhe antes de qualquer gravação na prova
             if arq.get('gabarito'):
                 gabaritos[area] = _receive_answer_keys(arq['gabarito'], arq['nome_gabarito'])
-                
+
+                questoes_planilha = sorted({row["questao"] for row in rows})
+                questoes_gabarito = sorted(item["questao"] for item in gabaritos[area])
+
+                if questoes_planilha != questoes_gabarito:
+                    raise PlanilhaInvalida(
+                        f"As questões de '{arq['nome_arquivo']}' e do gabarito não batem: "
+                        f"{len(questoes_planilha)} na planilha e {len(questoes_gabarito)} no gabarito."
+                    )
+
             with engine.begin() as conn:
                 conn.execute(text("""
                     INSERT INTO migration
@@ -319,6 +329,9 @@ def _create_contest(engine, ano_aplicacao: int, serie: int, periodo: str, bimest
             GROUP BY p.idProva
             HAVING GROUP_CONCAT(t.letra ORDER BY t.letra SEPARATOR '') = :turmas
         """), {**chave, "turmas": turmas}).scalar()
+
+        if id_prova is not None:
+            raise PlanilhaInvalida("Essa prova já foi importada. Para corrigir, edite pelo sistema ou apague a prova antes.")
 
         if id_prova is None:
             # A coluna titulo ainda é obrigatória; mesmo formato do PROVA::tituloGerado do Laravel
