@@ -1,3 +1,5 @@
+import threading
+
 from flask import request
 from flask_smorest import Blueprint
 from src.schemas import ImportacaoResponseSchema
@@ -14,6 +16,9 @@ CAMPOS_AREA = {
     'arquivo_hum': 'HUM',
     'arquivo_mat': 'MAT',
 }
+
+# A staging migration é uma tabela só: um import por vez, senão um apaga a do outro
+_trava_importacao = threading.Lock()
 
 
 @importacao.route('/importar', methods=['POST'])
@@ -62,14 +67,15 @@ def importar():
         return {"mensagem": "Envie ao menos um arquivo CSV (arquivo_cod, arquivo_cn, arquivo_hum ou arquivo_mat)"}, 400
 
     try:
-        resultado = importar_csvs(
-            arquivos=arquivos,
-            ano_aplicacao=ano_aplicacao,
-            serie=serie,
-            periodo=periodo,
-            bimestre=bimestre,
-            turmas=turmas,
-        )
+        with _trava_importacao:
+            resultado = importar_csvs(
+                arquivos=arquivos,
+                ano_aplicacao=ano_aplicacao,
+                serie=serie,
+                periodo=periodo,
+                bimestre=bimestre,
+                turmas=turmas,
+            )
     except PlanilhaInvalida as e:
         return {"mensagem": str(e)}, 400
 
