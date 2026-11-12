@@ -15,7 +15,7 @@ fake = Faker('pt_BR')
 #  - (_create_contest) Criação das provas a partir da concactenação de turmas utilizando um HAVING BY 
 #  - (_create_questions) Cria as questões e as liga à prova pela tabela contem (N:M)
 #  - (_create_alternatives) Insere as alternativas
-#  - (_aplicar_gabarito) Insere no gabarito a partir da buscas das questoes de dentro da prova
+#  - (_aplicar_gabarito) Insee no gabarito a partir da buscas das questoes de dentro da prova
 #  - (_users_answers) Armazena as alternativas escolhidas pelos alunos nas provas a partir do where filtrando por turuma turno periodo etc. Concatenando apenas os usuários que tiverem o minimo de aplicacoes para aquela prova (3) no caso, para remover usuários faltantes em alguma das provas. 
 #       - Pra essa parte eu preciso de garantir que os alunos nao estarao duplicados nas tabelas. 
 #  - (_create_realiza_prova) Cria realiza prova que é responsavel por armazenar qual prova foi realizada por qual usuario bem como armazenar a pontuacao do mesmo em cada aplicacao    
@@ -24,7 +24,6 @@ fake = Faker('pt_BR')
 
 AREAS_VALIDAS = ('COD', 'CN', 'HUM', 'MAT')
 SEPARADORES_CSV = (',', ';', '\t')
-
 
 class PlanilhaInvalida(ValueError):
     pass
@@ -105,7 +104,7 @@ def _processar_csv_bytes(
     semestre: str,
     turma_ano: int,
     grupo: str,
-) -> list[dict]:
+) -> tuple[list[dict], dict, dict]:
     """Lê um CSV ou XLSX em memória e retorna as linhas prontas para INSERT."""
     df = _ler_planilha(conteudo, nome_arquivo)
 
@@ -123,6 +122,7 @@ def _processar_csv_bytes(
     if 'ID' not in nomes:
         raise PlanilhaInvalida(f"'{nome_arquivo}' não tem a coluna ID, que identifica o aluno.")
     
+    
     col_id   = nomes.index('ID')
     df       = df.drop_duplicates(subset=df.columns[col_id], keep='last')
     user_ids = df.iloc[:, col_id].apply(_parse_user_id).values
@@ -130,11 +130,45 @@ def _processar_csv_bytes(
     datas    = df.iloc[:, col_data]
     dayfirst = bool(datas.astype(str).str.match(r'\s*\d{1,2}/\d{1,2}/\d{4}').any())
 
+
+
     pontuacao_map = dict(zip(user_ids, df.iloc[:, col_pont].apply(_parse_pontuacao).values))
     momento_map   = dict(zip(user_ids, pd.to_datetime(datas, errors='coerce', dayfirst=dayfirst).values))
 
-    manter    = [i for i in range(df.shape[1]) if i not in {col_data, col_pont, col_turma, col_id}]
-    respostas = df.iloc[:, manter].dropna(axis=1, how='all')
+    colunas_fixas = [df.columns[col_data], df.columns[col_pont], df.columns[col_turma], df.columns[col_id]]
+
+    novo_cabecalho = []
+    numero_da_questao = {}                        
+    numero = 1
+
+    for coluna in df.columns:
+        if coluna in colunas_fixas:
+            novo_cabecalho.append(coluna)
+        else:
+            novo_cabecalho.append(numero)
+            numero_da_questao[coluna] = numero     
+            numero += 1
+
+
+    df.columns = novo_cabecalho
+    
+    respostas = df.drop(columns=colunas_fixas)
+
+    # Para cada questão (coluna), troca o texto de cada alternativa por um número
+    numero_da_alternativa = {}                             # ex.: {1: {"A": "1", "B": "2"}, 2: {...}}
+    for questao in respostas.columns:
+        marcadas = respostas[questao].dropna()             
+        marcadas = _normalizar_respostas(marcadas)         # " a" e "A" viram a mesma coisa
+        de_para = {}
+        numero = 1
+        for alternativa in sorted(marcadas.unique()):     
+            de_para[alternativa] = str(numero)
+            numero += 1
+        numero_da_alternativa[questao] = de_para
+        respostas[questao] = marcadas.map(de_para)         # troca o texto pelo número
+
+    respostas = respostas.dropna(axis=1, how='all')
+
     respostas.index = user_ids
 
     df_melted = respostas.stack().dropna().reset_index()
@@ -144,7 +178,7 @@ def _processar_csv_bytes(
     df_melted["momento_entrega"] = df_melted["user_id"].apply(lambda uid: momento_map.get(uid))
     df_melted["pontuacao"]       = df_melted["user_id"].apply(lambda uid: pontuacao_map.get(uid))
 
-    return [
+    rows = [
         {
             "periodo":          periodo,
             "semestre":         semestre,
@@ -159,7 +193,7 @@ def _processar_csv_bytes(
         }
         for _, row in df_melted.iterrows()
     ]
-
+    return rows, numero_da_questao, numero_da_alternativa
 
 def importar_csvs(
     arquivos: list[dict],
@@ -180,10 +214,10 @@ def importar_csvs(
     try:
         total_linhas = 0
         gabaritos = {}
+
         for arq in arquivos:
             area = arq['area'].upper()
-            # A staging mantém os nomes antigos: semestre = bimestre, turma_ano = série, grupo = turmas
-            rows = _processar_csv_bytes(
+            rows, numero_da_questao, numero_da_alternativa = _processar_csv_bytes(
                 conteudo=arq['conteudo'],
                 nome_arquivo=arq['nome_arquivo'],
                 area=area,
@@ -192,21 +226,30 @@ def importar_csvs(
                 turma_ano=serie,
                 grupo=turmas,
             )
+
             if not rows:
                 continue
-            # Lido aqui para que um gabarito inválido falhe antes de qualquer gravação na prova
+            
             if arq.get('gabarito'):
                 gabaritos[area] = _receive_answer_keys(arq['gabarito'], arq['nome_gabarito'])
 
-                questoes_planilha = sorted({row["questao"] for row in rows})
-                questoes_gabarito = sorted(item["questao"] for item in gabaritos[area])
+                questoes_planilha_raw = sorted(numero_da_questao)
+                questoes_gabarito_raw = sorted(item["questao"] for item in gabaritos[area])
 
-                if questoes_planilha != questoes_gabarito:
+                if questoes_planilha_raw != questoes_gabarito_raw:
                     raise PlanilhaInvalida(
                         f"As questões de '{arq['nome_arquivo']}' e do gabarito não batem: "
-                        f"{len(questoes_planilha)} na planilha e {len(questoes_gabarito)} no gabarito."
+                        f"{len(questoes_planilha_raw)} na planilha e {len(questoes_gabarito_raw)} no gabarito."
                     )
+                for item in gabaritos[area]:
+                    questao = numero_da_questao[item["questao"]]   # "Coluna 7" → 1
+                    de_para = numero_da_alternativa[questao]       # as alternativas da questão 1
+                    item["questao"] = str(questao)
 
+                    if item["resposta"] in de_para:
+                        item["resposta"] = de_para[item["resposta"]]
+
+                
             with engine.begin() as conn:
                 conn.execute(text("""
                     INSERT INTO migration
@@ -334,7 +377,6 @@ def _create_contest(engine, ano_aplicacao: int, serie: int, periodo: str, bimest
             raise PlanilhaInvalida("Essa prova já foi importada. Para corrigir, edite pelo sistema ou apague a prova antes.")
 
         if id_prova is None:
-            # A coluna titulo ainda é obrigatória; mesmo formato do PROVA::tituloGerado do Laravel
             id_prova = conn.execute(text("""
                 INSERT INTO PROVA (titulo, anoAplicacao, serie, periodo, bimestre,
                                    tempoMaximo, salvarTempoResposta, createdBy)
@@ -371,7 +413,6 @@ def _create_aplicacoes(engine, id_prova: int):
 
 
 def _create_questions(engine, id_prova: int):
-    # Prova e questão se ligam pela contem (N:M); por isso cada questão nova precisa do seu idQuestao
     with engine.begin() as conn:
         novas = conn.execute(text("""
             SELECT DISTINCT m.questao, ac.idArea
