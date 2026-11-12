@@ -90,8 +90,8 @@ class DLComparisonResponseSchema(ma.Schema):
 
 class QuestionInfoSchema(ma.Schema):
     idQuestao = ma.fields.Int()
-    nome = ma.fields.Str(allow_none=True)
     descricao = ma.fields.Str(allow_none=True)
+    observacao = ma.fields.Str(allow_none=True)
     dificuldade = ma.fields.Str(allow_none=True)
     erradas = ma.fields.Int()
     corretas = ma.fields.Int()
