@@ -64,7 +64,27 @@ class ComparisonService:
                 uid: RespostasLake.select_user_questions(uid, exam_id, withTimestamp=with_timestamp)
                 for uid in all_users
             }
-        return HammingService.kmeans_hamming(responses_cache, k=k, max_iter=max_iter)
+
+        # O k-means compara as respostas posição por posição: só entram os alunos
+        # com o número de respostas mais comum na prova
+        contagem = {}
+        for respostas in responses_cache.values():
+            tamanho = len(respostas)
+            if tamanho in contagem:
+                contagem[tamanho] += 1
+            else:
+                contagem[tamanho] = 1
+
+        if not contagem:
+            return {}
+        tamanho_mais_comum = max(contagem, key=contagem.get)
+
+        mesmo_tamanho = {}
+        for uid, respostas in responses_cache.items():
+            if len(respostas) == tamanho_mais_comum:
+                mesmo_tamanho[uid] = respostas
+
+        return HammingService.kmeans_hamming(mesmo_tamanho, k=k, max_iter=max_iter)
 
     @staticmethod
     def process_user_batch(user_batch, all_users, exam_id=None, responses_cache=None, with_timestamp=None):
@@ -93,7 +113,7 @@ class ComparisonService:
 
                 respostas_other_user = responses_cache[other_user]
 
-                if not abs(len(current_user_response) - len(respostas_other_user)) <= 2:  # pylint: disable=line-too-long
+                if len(current_user_response) != len(respostas_other_user):
                     continue
 
                 jaccard_result = ComparisonService.compare(current_user_response,
