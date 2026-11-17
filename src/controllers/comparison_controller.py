@@ -1,7 +1,7 @@
 # pylint: disable=duplicate-code
 # Controllers share similar structure for each similarity metric endpoint.
 # Intentional duplication to maintain separation of concerns per algorithm.
-from multiprocessing import Pool, cpu_count
+from multiprocessing import get_context, cpu_count
 from functools import partial
 from flask_smorest import Blueprint
 from src.models.respostas_lake import RespostasLake
@@ -53,7 +53,8 @@ def compare_similarity(query_args):
                           responses_cache=responses_cache,
                           with_timestamp=with_timestamp)
 
-    with Pool(processes=num_processes, initializer=ComparisonService.init_worker) as pool:
+    # para evitar deadlocks foi utilizado o spawn, que é mais lento e usa o fork + exec, limpando a memoria e recarregando as libraries
+    with get_context("spawn").Pool(processes=num_processes, initializer=ComparisonService.init_worker) as pool:
         results = pool.map(process_func, user_batches)
 
     comparison_matrix = [item for batch in results for item in batch]

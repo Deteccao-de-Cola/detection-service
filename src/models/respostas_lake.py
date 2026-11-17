@@ -8,7 +8,7 @@ class RespostasLake(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     sourceId = db.Column(db.Integer, nullable=False)
     contestId = db.Column(db.Integer, nullable=True, default=0)
-    respondidaEm = db.Column(db.DateTime, nullable=False)
+    respondidaEm = db.Column(db.DateTime, nullable=True)
     itemId = db.Column(db.Integer, nullable=False)
     respostaUsuario = db.Column(db.String(255), nullable=True)
     userId = db.Column(db.Integer, nullable=False)

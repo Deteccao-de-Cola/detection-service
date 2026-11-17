@@ -1,6 +1,7 @@
 from datetime import datetime
 from src.models.respostas_lake import RespostasLake
-from src.services.damerau_levenshtein_service import DamerauLevenshteinService
+# Damerau-Levenshtein desativado: a lógica continua em damerau_levenshtein_service.py
+# from src.services.damerau_levenshtein_service import DamerauLevenshteinService
 from src.services.jaccard_service import JaccardService
 from src.services.hamming_service import HammingService
 
@@ -103,15 +104,6 @@ class ComparisonService:
                                                           respostas_other_user,
                                                           HammingService.hamming_similarity)
 
-                if with_timestamp:
-                    dl_result = ComparisonService.compare_by_timestamp(current_user_response,
-                                                            respostas_other_user,
-                                                            DamerauLevenshteinService.damerau_levenshtein_similarity_any_swap)  # pylint: disable=line-too-long
-                else:
-                    dl_result = ComparisonService.compare_sorted(current_user_response,
-                                                            respostas_other_user,
-                                                            DamerauLevenshteinService.damerau_levenshtein_similarity_any_swap)  # pylint: disable=line-too-long
-
                 result = {
                     'user': user,
                     'compared_with': other_user,
@@ -125,7 +117,8 @@ class ComparisonService:
                 }
 
                 result['jaccard_index'] = jaccard_result
-                result['dl_similarity'], result['dl_operations'] = dl_result
+                # Damerau-Levenshtein desativado
+                # result['dl_similarity'], result['dl_operations'] = dl_result
                 result['hamming_similarity'], result['hamming_distance'] = hamming_result
 
                 batch_results.append(result)

@@ -23,3 +23,6 @@ dist-detection.zip
 output_debug.txt
 pylint-report.txt
 src/public/cache/
+
+# Generated charts
+src/public/**/*.png

@@ -5,7 +5,7 @@ class QuestionLevelService:
     @staticmethod
     def recalculate_questions_level(contest_id):
         questoes_sql = db.text("""
-            SELECT q.idQuestao, q.nome, q.descricao, q.dificuldade
+            SELECT q.idQuestao, q.descricao, q.observacao, q.dificuldade
             FROM QUESTAO q
             JOIN contem c ON q.idQuestao = c.idQuestao
             WHERE c.idProva = :contestId
