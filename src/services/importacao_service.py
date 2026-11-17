@@ -379,8 +379,8 @@ def _create_contest(engine, ano_aplicacao: int, serie: int, periodo: str, bimest
         if id_prova is None:
             id_prova = conn.execute(text("""
                 INSERT INTO PROVA (titulo, anoAplicacao, serie, periodo, bimestre,
-                                   tempoMaximo, salvarTempoResposta, createdBy)
-                VALUES (:titulo, :ano_aplicacao, :serie, :periodo, :bimestre, 90, 0,
+                                   salvarTempoResposta, createdBy)
+                VALUES (:titulo, :ano_aplicacao, :serie, :periodo, :bimestre, 0,
                         (SELECT id FROM users WHERE email = 'admin@gmail.com'))
             """), {**chave, "titulo": f"{serie} ano - {periodo} - {bimestre} - {turmas}"}).lastrowid
 
