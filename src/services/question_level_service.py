@@ -8,7 +8,8 @@ class QuestionLevelService:
             SELECT q.idQuestao, q.descricao, q.observacao, q.dificuldade
             FROM QUESTAO q
             JOIN contem c ON q.idQuestao = c.idQuestao
-            WHERE c.idProva = :contestId
+            JOIN APLICACAO_PROVA ap ON ap.idAplicacao = c.idAplicacao
+            WHERE ap.idProva = :contestId
         """)
         questoes_result = db.session.execute(questoes_sql, {"contestId": contest_id})
         questoes = [dict(row._mapping) for row in questoes_result.fetchall()]

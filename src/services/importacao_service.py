@@ -415,26 +415,27 @@ def _create_aplicacoes(engine, id_prova: int):
 def _create_questions(engine, id_prova: int):
     with engine.begin() as conn:
         novas = conn.execute(text("""
-            SELECT DISTINCT m.questao, ac.idArea
+            SELECT DISTINCT m.questao, ac.idArea, ap.idAplicacao
             FROM migration m
             JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
+            JOIN APLICACAO_PROVA  ap ON ap.idProva = :id_prova
+                                    AND ap.idArea  = ac.idArea
             WHERE NOT EXISTS (
                 SELECT 1
                 FROM contem c
                 JOIN QUESTAO q ON q.idQuestao = c.idQuestao
-                WHERE c.idProva   = :id_prova
-                  AND q.idArea    = ac.idArea
-                  AND q.descricao = m.questao
+                WHERE c.idAplicacao = ap.idAplicacao
+                  AND q.descricao   = m.questao
             )
         """), {"id_prova": id_prova}).fetchall()
 
-        for questao, id_area in novas:
+        for questao, id_area, id_aplicacao in novas:
             id_questao = conn.execute(text(
                 "INSERT INTO QUESTAO (descricao, observacao, idArea) VALUES (:descricao, '', :id_area)"
             ), {"descricao": questao, "id_area": id_area}).lastrowid
             conn.execute(text(
-                "INSERT INTO contem (idProva, idQuestao) VALUES (:id_prova, :id_questao)"
-            ), {"id_prova": id_prova, "id_questao": id_questao})
+                "INSERT INTO contem (idAplicacao, idQuestao) VALUES (:id_aplicacao, :id_questao)"
+            ), {"id_aplicacao": id_aplicacao, "id_questao": id_questao})
 
 
 def _create_alternatives(engine, id_prova: int):
@@ -444,10 +445,11 @@ def _create_alternatives(engine, id_prova: int):
             SELECT DISTINCT q.idQuestao, m.resposta
             FROM migration m
             JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
-            JOIN contem  c ON c.idProva   = :id_prova
-            JOIN QUESTAO q ON q.idQuestao = c.idQuestao
-                          AND q.idArea    = ac.idArea
-                          AND q.descricao = m.questao
+            JOIN APLICACAO_PROVA ap ON ap.idProva    = :id_prova
+                                   AND ap.idArea      = ac.idArea
+            JOIN contem          c  ON c.idAplicacao = ap.idAplicacao
+            JOIN QUESTAO         q  ON q.idQuestao   = c.idQuestao
+                                   AND q.descricao   = m.questao
             LEFT JOIN ALTERNATIVA a ON a.idQuestao = q.idQuestao
                                    AND a.descricao = m.resposta
             WHERE a.idAlternativa IS NULL
@@ -465,12 +467,11 @@ def _users_answers(engine, id_prova: int):
             FROM migration m
             JOIN AREA_CONHECIMENTO ac ON ac.sigla = m.areaConhecimento
             JOIN users           u  ON u.id         = m.user_id
-            JOIN contem          c  ON c.idProva     = :id_prova
-            JOIN QUESTAO         q  ON q.idQuestao   = c.idQuestao
-                                   AND q.idArea       = ac.idArea
-                                   AND q.descricao    = m.questao
             JOIN APLICACAO_PROVA ap ON ap.idProva    = :id_prova
                                    AND ap.idArea      = ac.idArea
+            JOIN contem          c  ON c.idAplicacao = ap.idAplicacao
+            JOIN QUESTAO         q  ON q.idQuestao   = c.idQuestao
+                                   AND q.descricao    = m.questao
             JOIN ALTERNATIVA     a  ON a.idQuestao   = q.idQuestao
                                    AND a.descricao   = m.resposta
             WHERE m.user_id IN (
@@ -571,9 +572,10 @@ def _aplicar_gabarito(engine, id_prova: int, area: str, gabarito: list[dict]):
             UPDATE ALTERNATIVA a
             JOIN QUESTAO q            ON q.idQuestao = a.idQuestao
             JOIN contem c             ON c.idQuestao = q.idQuestao
+            JOIN APLICACAO_PROVA ap   ON ap.idAplicacao = c.idAplicacao
             JOIN AREA_CONHECIMENTO ac ON ac.idArea   = q.idArea
             SET a.alternativaCorreta = (a.descricao = :resposta)
-            WHERE c.idProva   = :id_prova
+            WHERE ap.idProva  = :id_prova
               AND ac.sigla    = :area
               AND q.descricao = :questao
         """), [{"id_prova": id_prova, "area": area, **item} for item in gabarito])
